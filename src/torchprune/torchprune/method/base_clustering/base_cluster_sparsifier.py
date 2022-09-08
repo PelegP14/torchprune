@@ -43,13 +43,13 @@ class BaseClusterSparsifier(BaseSparsifier, ABC):
 
         # check that embedding dimensions agree
         # sometimes factor module seems to mess up ...
-        if any(u.shape[1] != v.shape[0] for u, v, order in weights_hat):
+        if any(u.shape[1] != v.shape[0] for (u, v), order in weights_hat):
             warnings.warn("Skipping compression since embedding is wrong.")
             return []
 
         # check resulting number of weights in sparsification
         num_w_hats = sum(
-            (u != 0.0).sum() + (v != 0.0).sum() for u, v, order in weights_hat
+            (u != 0.0).sum() + (v != 0.0).sum() for (u, v), order in weights_hat
         )
         num_w = (self._tensor != 0.0).sum()
 

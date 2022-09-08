@@ -110,14 +110,6 @@ class BaseClusterNet(BaseDecomposeNet, ABC):
         # propagate compression one final time to ensure everything is correct
         self._propagate_compression()
 
-    def replace_parameters(self, other_net):
-        """Reset the compression and the underlying decomposition."""
-        # delete decomposition and reset forward functions.
-        self._remove_projection()
-
-        # now replace parameters ...
-        super().replace_parameters(other_net)
-
     def _remove_projection(self):
         """Undo projection step-by-step.
 
@@ -142,27 +134,6 @@ class BaseClusterNet(BaseDecomposeNet, ABC):
 
         # now "propagate" removed compression to nethandle
         self._propagate_compression()
-
-    def _prepare_compression(self):
-        """Prepare compression step by removing projection."""
-        self._remove_projection()
-
-    def _start_preprocessing(self):
-        pass
-
-    def _finish_preprocessing(self):
-        pass
-
-    def _get_allocator(self):
-        return self._allocator_type(self.compressed_net, self._k_split)
-
-    def _get_pruner(self, ell):
-        """Return a fake pruner since we don't need a pruner."""
-        module = self.compressed_net.compressible_layers[ell]
-        return TensorPruner2(module.weight, module.weight.data.abs())
-
-    def _get_sparsifier(self, pruner):
-        return self._sparsifier_type(pruner)
 
     def _set_compression(self, ell, weight_hat, bias=None):
         """Set the compression by replacing the module."""
@@ -194,19 +165,3 @@ class BaseClusterNet(BaseDecomposeNet, ABC):
                     module_projected,
                 )
                 break
-
-    def _propagate_compression(self, cache_etas=True):
-        # re-register compressible layers
-        self.compressed_net.register_compressible_layers()
-
-        # re-cache etas now
-        if cache_etas:
-            self.compressed_net.cache_etas()
-
-    def _get_prune_mask_from_grad(self, grad):
-        """Get the pruning mask based on the gradients."""
-        raise RuntimeError("This should not be called for decomposition nets.")
-
-    def _parameters_for_grad_prune(self):
-        """Yield params where grad-based pruning heuristic is applicable."""
-        raise RuntimeError("This should not be called for decomposition nets.")

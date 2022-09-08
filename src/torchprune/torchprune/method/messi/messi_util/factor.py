@@ -118,6 +118,38 @@ def raw(A, j, k, steps=10, NUM_INIT_FOR_EM=10):
 
     return partition, listU, listV
 
+def raw_for_clustering(A, j, k, steps=10, NUM_INIT_FOR_EM=10):
+
+    # returns (k, j, d) tensor to represent the k flats
+    # by j basis vectors in R^d
+    flats = _getProjectiveClustering(
+        A, j, k, steps=steps, NUM_INIT_FOR_EM=NUM_INIT_FOR_EM
+    )
+
+    # partition[i] == z means row i of A belongs to flat z
+    # where 0 <= i < n and 0 <= z < k
+    print("Timing partition...")
+    import time
+
+    start = time.time()
+    partition = list(_partitionToClosestFlat_new(A, flats))
+    end = time.time()
+    duration = end - start
+    print("Partition complete:", duration, "s")
+
+    listU = []
+    listV = []
+    listIdx = []
+    n = A.shape[0]
+    for z in range(k):
+        indices_z = [row for row in range(n) if partition[row] == z]
+        A_z = A[indices_z, :]
+        U_z, V_z = lowRank(A_z, j)
+        listU.append(U_z)
+        listV.append(V_z)
+        listIdx.append(indices_z)
+
+    return partition, listU, listV, listIdx
 
 """
 Generates the column indices for each row that must be 0 in the
