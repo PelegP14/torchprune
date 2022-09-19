@@ -8,8 +8,8 @@ from  ..messi import (
     MessiClusterSparsifier
 )
 from .temp_allocator import (
-    ALDSErrorAllocator,
-    ALDSErrorIterativeAllocator,
+    TempErrorAllocator,
+    TempErrorIterativeAllocator,
 )
 
 
@@ -19,7 +19,7 @@ class TempNet(BaseClusterNet):
     @property
     def _allocator_type(self):
         """Get allocator type."""
-        return ALDSErrorIterativeAllocator
+        return TempErrorIterativeAllocator
 
     @property
     def _sparsifier_type(self):

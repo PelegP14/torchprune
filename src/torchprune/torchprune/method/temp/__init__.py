@@ -3,11 +3,5 @@
 
 
 from .temp_net import (
-    ALDSNet,
-    ALDSNetPlus,
-    ALDSNetOne,
-    ALDSNetOptK,
-    ALDSNetErrorOnly,
-    ALDSNetSimple,
-    ALDSNetSimple5,
+    TempNet,
 )

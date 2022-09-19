@@ -159,7 +159,7 @@ class ProjectedModule(nn.Module, ABC):
         # set new decoding
         w_dec = torch.cat([w_dec for (w_dec, _), _ in weights_hat], dim=1)
         decoding = self._grouped_module_type(
-            **self._get_init_kwargs((w_dec,), (torch.arange(w_dec.shape[0]),)), **kwargs_dec
+            **self._get_init_kwargs((w_dec,), (torch.arange(w_dec.shape[1]),)), **kwargs_dec
         )
         bias = module_original.bias
         decoding.set_weights((w_dec,), bias)

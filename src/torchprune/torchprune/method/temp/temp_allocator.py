@@ -4,9 +4,10 @@ import numpy as np
 import torch
 
 from ..base_decompose import BaseDecomposeAllocator, FoldScheme
+from .temp_util import factor
+MAX_K = 20
 
-
-class ALDSErrorAllocator(BaseDecomposeAllocator):
+class TempErrorAllocator(BaseDecomposeAllocator):
     """Relative error-based (singular values) ALDS allocator.
 
     We minimize the maximum relative error based on the operator
@@ -46,55 +47,24 @@ class ALDSErrorAllocator(BaseDecomposeAllocator):
         for r_e_t, r_e in zip(self._rel_error, rel_errors):
             r_e_t[: len(r_e)].copy_(r_e)
 
-    @staticmethod
-    def _compute_sv_for_weight(weight, k_split, scheme):
-        """Compute SVD for one layer."""
+    def _compute_rel_error_for_weight(self, weight, k_split, scheme):
+        # calculate k,j projective clustering for each of the possible j values and with the given k
         # fold into matrix operator
-        weight = scheme.fold(weight.detach())
+        device = weight.device
+        weight = scheme.fold(weight.detach()).t().cpu().numpy()
 
         # get k_split as int instead of tensor
         k_split = k_split.item()
 
         # compute rank
         rank_k = min(weight.shape[0], weight.shape[1] // k_split)
-        # pre-allocate singular values ...
-        singular_values = torch.zeros(k_split, rank_k, device=weight.device)
-        # compute singular values for each part of the decomposed weight
-        for idx_k, w_per_g_k in enumerate(torch.chunk(weight, k_split, dim=1)):
-            singular_values[idx_k] = torch.svd(w_per_g_k, compute_uv=False)[1]
+        # compute flats and errors
+        rel_error = []
+        for j in range(1,rank_k):
+            flats = factor.getProjectiveClustering(weight, j, k_split)
+            rel_error.append(factor.getCost(weight, flats))
 
-        # note has shape [k_split x rank_per_k]
-        return singular_values
-
-    @staticmethod
-    def _compute_norm_for_weight(weight, scheme, ord):
-        """Compute and return operator norm for given matrix."""
-        # fold into matrix operator
-        weight = scheme.fold(weight.detach())
-
-        # get and return operator norm of flattened weight
-        return torch.linalg.norm(weight, ord=ord)
-
-    def _compute_rel_error_for_weight(self, weight, k_split, scheme):
-        # grab all singular values for decomposition
-        # has shape [k_split x rank_per_k]
-        singular_values = self._compute_sv_for_weight(weight, k_split, scheme)
-
-        # compute operator norm for current operator
-        # has shape []
-        op_norm = self._compute_norm_for_weight(weight, scheme, ord=2)
-
-        # compute operator norm of "residual operator" W - What
-        # --> corresponds to biggest singular values not included.
-        # What consists of multiple k_splits.
-        # see corresponding paper for op_norm derivation
-        # We take max over k-splits here.
-        op_norm_residual = singular_values.max(dim=0)[0]
-
-        # resulting relative error for each layer and each possible rank_j!
-        # shape is [max(num_sv)]
-        rel_error = op_norm_residual / op_norm
-
+        rel_error = torch.tensor(rel_error,device=device)
         return rel_error
 
     def _get_boundaries(self):
@@ -111,40 +81,17 @@ class ALDSErrorAllocator(BaseDecomposeAllocator):
 
         return ranks_j
 
+    def _get_possible_k(self, w_shape_in):
+        # get k's currently used as a parameter until a fast coreset is developed
+        ks = np.arange(MAX_K,0,-1)
+        return ks
 
-class ALDSErrorAllocatorScheme0(ALDSErrorAllocator):
-    """Relative error-based ALDS allocator with scheme 0."""
-
-    @property
-    def _folding_scheme_value(self):
-        return FoldScheme.KERNEL_ENCODE.value
-
-
-class ALDSErrorAllocatorScheme1(ALDSErrorAllocator):
-    """Relative error-based ALDS allocator with scheme 1."""
-
-    @property
-    def _folding_scheme_value(self):
-        return FoldScheme.KERNEL_SPLIT1.value
+    def _get_k_splits(self, desired_k_split):
+        """Get desired k for each layer."""
+        return torch.ones_like(self._in_features) * desired_k_split
 
 
-class ALDSErrorAllocatorScheme2(ALDSErrorAllocator):
-    """Relative error-based ALDS allocator with scheme 2."""
-
-    @property
-    def _folding_scheme_value(self):
-        return FoldScheme.KERNEL_SPLIT2.value
-
-
-class ALDSErrorAllocatorScheme3(ALDSErrorAllocator):
-    """Relative error-based ALDS allocator with scheme 3."""
-
-    @property
-    def _folding_scheme_value(self):
-        return FoldScheme.KERNEL_DECODE.value
-
-
-class ALDSErrorIterativeAllocator(ALDSErrorAllocator):
+class TempErrorIterativeAllocator(TempErrorAllocator):
     """Iterative optimization wrapper for rel error allocator."""
 
     @property
@@ -557,67 +504,3 @@ class ALDSErrorIterativeAllocator(ALDSErrorAllocator):
         self._k_splits.copy_(k_splits_best)
         self._scheme_values = s_values_best
         _super_allocate()
-
-
-class ALDSErrorIterativeAllocatorPlus(ALDSErrorIterativeAllocator):
-    """Iterative optimization wrapper for rel error allocator with schemes."""
-
-    @property
-    def _num_seeds(self):
-        """Get number of seeds to try for k."""
-        return 30
-
-    @property
-    def _scheme_choices(self):
-        """Get an iterator over scheme choices.
-
-        Note that we assume that the index of each choice corresponds to the
-        enum value.
-        """
-        return FoldScheme
-
-
-class ALDSErrorKOnlyAllocator(ALDSErrorIterativeAllocator):
-    """A constant per-layer prune ratio combined with the best k.
-
-    This allocator will pick a constant per-layer prune ratio and then try to
-    find the best k for each layer.
-    """
-
-    def __init__(self, *args, **kwargs):
-        """Initialize and keep a fake rel eror around."""
-        super().__init__(*args, **kwargs)
-        self._rel_error_fake = 100.0
-
-    @property
-    def _num_seeds(self):
-        """Get number of seeds to try for k."""
-        return 1
-
-    @property
-    def _num_iter(self):
-        """Get number of iterations per seed."""
-        return 1
-
-    def _get_boundaries(self):
-        # use min/max relative prune ratio
-        return 1e-12, 1.1
-
-    def _compute_ranks_j_for_arg(self, arg, ranks, num_weights_per_j):
-        """Return ranks such that per-layer prune ratio is constant."""
-        # total size and per-layer budget
-        num_w_orig = self._out_features * self._in_features * self._kernel_size
-        budget_per_layer = arg * num_w_orig
-
-        # ranks are chosen accordingly
-        ranks_j = (budget_per_layer / num_weights_per_j).round()
-        return ranks_j
-
-    def _super_allocate(self, budget, disp=True):
-        # Run allocate but then catch wrong arg_opt and replace it
-        super()._super_allocate(budget, disp=disp)
-
-        # since we never want to use the initialization we need to fake a lower
-        # error always (just a ever decreasing fake error)
-        self._rel_error_fake -= 0.01
-        return self._rel_error_fake

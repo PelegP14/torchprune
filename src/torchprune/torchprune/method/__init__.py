@@ -15,6 +15,7 @@ from .ref import *
 from .sipp import *
 from .snip import *
 from .svd import *
+from .temp import *
 from .thi import *
 from .thres_filter import *
 from .thres_weight import *
