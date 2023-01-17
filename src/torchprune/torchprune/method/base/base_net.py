@@ -16,6 +16,7 @@ import warnings
 from scipy import optimize
 import torch
 import torch.nn as nn
+import torch.nn.utils.prune as prune
 
 from ...util import tensor
 
@@ -486,9 +487,13 @@ class WeightNet(CompressedNet, ABC):
 
     def _set_compression(self, ell, W_hat, bias=None):
         module = self.compressed_net.compressible_layers[ell]
-        module.weight.data = W_hat
+        # remove prune if it was already applied
+        if hasattr(module, 'weight_orig'):
+            prune.remove(module, 'weight')
+        module.weight.data = W_hat#nn.Parameter(W_hat)
+        prune.l1_unstructured(module, 'weight', torch.count_nonzero(module.weight.data == 0).item())
         if bias is not None:
-            module.bias.data = bias
+            module.bias = nn.Parameter(bias)
 
     def _get_prune_mask_from_grad(self, grad):
         """Get the pruning mask based on the gradients."""
@@ -497,6 +502,16 @@ class WeightNet(CompressedNet, ABC):
     def _parameters_for_grad_prune(self):
         """Yield params where grad-based pruning heuristic is applicable."""
         yield from self.compressed_net.parameters_without_embedding()
+
+    def _prepare_state_dict_loading(self, state_dict):
+        for module in self.compressed_net.compressible_layers:
+            # remove prune if it was already applied
+            if hasattr(module,'weight_orig'):
+                weight_orig_copy = module.weight_orig.data.clone()
+                prune.remove(module,'weight')
+                module.weight.data = weight_orig_copy
+            prune.l1_unstructured(module, 'weight', torch.count_nonzero(module.weight.data == 0).item())
+
 
 
 class FilterNet(CompressedNet, ABC):

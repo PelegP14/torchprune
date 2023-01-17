@@ -34,9 +34,9 @@ description:
     in a j-rank approximation.  These j-rank approximations
     are stitched together to form the output pair (U,V).
 """
-
+import os
 import numpy as np
-from .testEM2 import computeCost, computeDistanceToSubspace, EMLikeAlg
+from .testEM2 import computeCost, computeDistanceToSubspace, EMLikeAlg, computeCostForPartition, computeSuboptimalSubspace
 
 """
 The main function of this file.
@@ -118,6 +118,73 @@ def raw(A, j, k, steps=10, NUM_INIT_FOR_EM=10):
 
     return partition, listU, listV
 
+def raw_with_comparison(A, j, k, steps=10, NUM_INIT_FOR_EM=10):
+
+    # returns (k, j, d) tensor to represent the k flats
+    # by j basis vectors in R^d
+    flats = _getProjectiveClustering(
+        A, j, k, steps=steps, NUM_INIT_FOR_EM=NUM_INIT_FOR_EM
+    )
+    n, d = A.shape
+    w = np.ones(n)
+    Vs = np.empty((k, j, d))
+    idxs = np.arange(n)
+    idxs = np.array_split(idxs, k)  # ;print(idxs)
+    for i in range(k):  # initialize k random orthogonal matrices
+        Vs[i, :, :], _ = computeSuboptimalSubspace(
+            A[idxs[i], :], w[idxs[i]], j
+        )
+    partition = [i // int(n / k) for i in range(n)]
+    alds_error = computeCostForPartition(A,w,Vs,partition)[0]
+    EM_error = computeCost(A,w,flats)[0]
+    print("error of using alds {}".format(alds_error))
+    save_path = os.path.join(os.path.abspath(os.path.dirname(__file__)),"aldsvsprojective.npy")
+    idx = 1 if EM_error < alds_error else 0
+    arr = np.array([0,0]) if not os.path.exists(save_path) else np.load(save_path)
+    arr[idx] += 1
+    np.save(save_path,arr)
+
+    # partition[i] == z means row i of A belongs to flat z
+    # where 0 <= i < n and 0 <= z < k
+    print("Timing partition...")
+    import time
+
+    start = time.time()
+    partition = list(_partitionToClosestFlat_new(A, flats))
+    end = time.time()
+    duration = end - start
+    print("Partition complete:", duration, "s")
+
+    listU = []
+    listV = []
+    n = A.shape[0]
+    for z in range(k):
+        indices_z = [row for row in range(n) if partition[row] == z]
+        if len(indices_z) == 0:
+            continue
+        A_z = A[indices_z, :]
+        U_z, V_z = lowRank(A_z, j)
+        listU.append(U_z)
+        listV.append(V_z)
+
+    return partition, listU, listV
+
+def raw_like_alds(A,j,k):
+
+
+    listU = []
+    listV = []
+    n = A.shape[0]
+    partition = [i//int(n/k) for i in range(n)]
+    for z in range(k):
+        indices_z = [row for row in range(n) if partition[row] == z]
+        A_z = A[indices_z, :]
+        U_z, V_z = lowRank(A_z, j)
+        listU.append(U_z)
+        listV.append(V_z)
+
+    return partition, listU, listV
+
 def raw_for_clustering(A, j, k, steps=10, NUM_INIT_FOR_EM=10):
 
     # returns (k, j, d) tensor to represent the k flats
@@ -143,6 +210,8 @@ def raw_for_clustering(A, j, k, steps=10, NUM_INIT_FOR_EM=10):
     n = A.shape[0]
     for z in range(k):
         indices_z = [row for row in range(n) if partition[row] == z]
+        if len(indices_z) == 0:
+            continue
         A_z = A[indices_z, :]
         U_z, V_z = lowRank(A_z, j)
         listU.append(U_z)
@@ -361,7 +430,10 @@ is by truncating the SVD of M.
 
 
 def lowRank(M, r):
-
+    if M.shape[0] < r:
+        full_M = np.zeros((r, M.shape[1]))
+        full_M[:M.shape[0], :] = M
+        M = full_M
     U, D, Vt = np.linalg.svd(M)
 
     # truncate to:

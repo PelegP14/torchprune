@@ -7,3 +7,4 @@ from .base_cluster_sparsifier import (
 )
 from .base_cluster_util import FoldScheme
 from .base_cluster_net import BaseClusterNet
+from .base_cluster_allocator import BaseClusterAllocator

@@ -1,6 +1,6 @@
 """A generic wrapper for any pytorch module with improved functionality."""
+import torch
 import torch.nn as nn
-
 
 class NetHandle(nn.Module):
     """Wrapper class to handle all network specific stuff.
@@ -163,7 +163,6 @@ class NetHandle(nn.Module):
         handles = []
         for module in self.compressible_layers:
             handles.append(module.register_forward_hook(hook_fun))
-
         # call forward function of torchnet (self(x) would be an infinite loop)
         self.torchnet(self._get_x_for_patches())
 

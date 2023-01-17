@@ -106,6 +106,38 @@ def computeCost(P, w, X, show_indices=False):
     else:
         return np.sum(cost_per_point), cost_per_point, indices
 
+def computeCostForPartition(P, w, X, partition):
+    """
+    This function represents our cost function which is a generalization of k-means where the means are now J-flats.
+
+    :param P: A weighed set, namely, a PointSet object.
+    :param X: A numpy matrix of J x d which defines the basis of the subspace which we would like to compute the
+              distance to.
+    :param v: A numpy array of d entries which defines the translation of the J-dimensional subspace spanned by the
+              rows of X.
+    :return: The sum of weighted distances of each point to the affine J dimensional flat which is denoted by (X,v)
+    """
+    global OBJECTIVE_LOSS
+    if X.ndim == 2:
+        dist_per_point = OBJECTIVE_LOSS(
+            computeDistanceToSubspaceviaNullSpace(P, null_space(X))
+        )
+        cost_per_point = np.multiply(w, dist_per_point)
+    else:
+        temp_cost_per_point = np.empty((P.shape[0], X.shape[0]))
+        for i in range(X.shape[0]):
+            temp_cost_per_point[:, i] = np.multiply(
+                w,
+                OBJECTIVE_LOSS(
+                    computeDistanceToSubspaceviaNullSpace(
+                        P, null_space(X[i, :, :])
+                    )
+                ),
+            )
+
+        cost_per_point = np.array([temp_cost_per_point[i,partition[i]] for i in range(P.shape[0])])
+    return np.sum(cost_per_point), cost_per_point
+
 
 def computeSuboptimalSubspace(P, w, J):
     """
@@ -118,7 +150,7 @@ def computeSuboptimalSubspace(P, w, J):
     start_time = time.time()
 
     _, _, V = np.linalg.svd(
-        P, full_matrices=False
+        P, full_matrices=True
     )  # computing the spanning subspace
     return V[:J, :], time.time() - start_time
 
@@ -136,24 +168,43 @@ def EMLikeAlg(P, w, j, k, steps, NUM_INIT_FOR_EM=10):
     """
 
     start_time = time.time()
+    #######################################
+    #### TODO: REMEMBER TO CHANGE #########
+    ########################################
     np.random.seed(random.seed())
+    # np.random.seed(42)
     n, d = P.shape
     min_Vs = None
     optimal_cost = np.inf
     # print ("started")
-    for iter in range(NUM_INIT_FOR_EM):  # run EM for 10 random initializations
+    for iter in range(-1, NUM_INIT_FOR_EM):  # run EM for 10 random initializations
         Vs = np.empty((k, j, d))
         idxs = np.arange(n)
-        np.random.shuffle(idxs)
-        idxs = np.array_split(idxs, k)  # ;print(idxs)
+        if iter < NUM_INIT_FOR_EM/2:
+            if iter > -1:
+                np.random.shuffle(idxs)
+            idxs = np.array_split(idxs, k)  # ;print(idxs)
+        else:
+            split_idxs = [0]
+            for kidx in range(k-1):
+                split = np.random.randint(1,n)
+                while split in split_idxs:
+                    split = np.random.randint(1,n)
+                split_idxs.append(split)
+            split_idxs.sort()
+            split_idxs.append(n)
+            new_idx = [idxs[split_idxs[i]:split_idxs[i+1]] for i in range(k)]
+            idxs = new_idx
         for i in range(k):  # initialize k random orthogonal matrices
             Vs[i, :, :], _ = computeSuboptimalSubspace(
                 P[idxs[i], :], w[idxs[i]], j
             )
-
-        for i in range(
-            steps
-        ):  # find best k j-flats which can attain local optimum
+        last_error = computeCost(P, w, Vs)[0]
+        improved = True
+        count = 0
+        while improved and count < steps:
+            # find best k j-flats which can attain local optimum
+            count += 1
             dists = np.empty(
                 (n, k)
             )  # distance of point to each one of the k j-flats
@@ -177,6 +228,13 @@ def EMLikeAlg(P, w, j, k, steps, NUM_INIT_FOR_EM=10):
                     w[np.where(cluster_indices == idx)[0]],
                     j,
                 )
+            current_cost = computeCost(P, w, Vs)[0]
+            if current_cost < last_error:
+                last_error = current_cost
+            else:
+                improved = False
+
+        print("took {} iterations to converge".format(count))
 
         current_cost = computeCost(P, w, Vs)[0]
         if current_cost < optimal_cost:
@@ -196,7 +254,13 @@ def EMLikeAlg(P, w, j, k, steps, NUM_INIT_FOR_EM=10):
 
 
 def main():
-    pass
+    data = np.load("example1.npz")
+    A = data['A']
+    j = data['j']
+    k = data['k']
+    n = A.shape[0]
+    w = np.arange(n)
+    EMLikeAlg(A,w,j,k,10)
 
 
 if __name__ == "__main__":

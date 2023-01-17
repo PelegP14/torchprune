@@ -182,7 +182,7 @@ class Grapher(object):
 
         return img
 
-    def _average_data(self, values, idx_ref=None):
+    def _average_data(self, values, idx_ref=None, use_best_rep=False):
         """Average the valus over nets and repetitions.
 
         values has the dimension
@@ -194,8 +194,13 @@ class Grapher(object):
 
         Returns data with mean and std in shape [numAlgorithms, numIntervals]
         """
-        mean = values.mean(axis=(0, 2)).swapaxes(0, 1)
-        std = np.std(values, axis=(0, 2)).swapaxes(0, 1)
+        if not use_best_rep:
+            mean = values.mean(axis=(0, 2)).swapaxes(0, 1)
+            std = np.std(values, axis=(0, 2)).swapaxes(0, 1)
+        else:
+            mean = values.max(axis=2).mean(axis=0).swapaxes(0, 1)
+            std = np.std(values.max(axis=2), axis=0).swapaxes(0, 1)
+
         if idx_ref is not None:
             mean -= mean[idx_ref : idx_ref + 1]
         return mean, std
@@ -265,6 +270,7 @@ class Grapher(object):
         logplot=False,
         store=True,
         kwargs_legend={},
+        use_best_rep=False,
     ):
         """Plot the actual data and store the plot as pdf."""
         # reset plot
@@ -277,7 +283,7 @@ class Grapher(object):
 
         x_mean, _ = self._average_data(self._x_values)
         y_mean, y_std = self._average_data(
-            self._y_values, self._ref_idx if show_delta else None
+            self._y_values, self._ref_idx if show_delta else None, use_best_rep=use_best_rep
         )
 
         # convert to percentage

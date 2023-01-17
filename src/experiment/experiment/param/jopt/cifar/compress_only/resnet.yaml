@@ -1,0 +1,32 @@
+network:
+  name: "resnet20"
+  dataset: "CIFAR10"
+  outputSize: 10
+
+training:
+  file: "training/cifar/resnet.yaml"
+
+retraining:
+  numEpochs: 0
+
+experiments:
+  methods:
+    - "ALDSNet"
+    - "TempNetALDSerror"
+    - "TempNetALDSerrorJOpt"
+  mode: "retrain"
+
+  numRepetitions: 1
+  numNets: 3
+
+  plotting:
+    minVal: 0.02
+    maxVal: 0.85
+
+  spacing:
+    - type: "geometric"
+      numIntervals: 20
+      maxVal: 0.85
+      minVal: 0.03
+
+  retrainIterations: -1

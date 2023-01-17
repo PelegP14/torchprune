@@ -49,6 +49,7 @@ class BaseClusterNet(BaseDecomposeNet, ABC):
             # get arrangements
             k_splits = state_dict[f"{mod_name}.k_splits"].item()
             arrangements = [state_dict[f"{mod_name}.arrangement{i}"] for i in range(k_splits)]
+            j_rank = state_dict[f"{mod_name}.j_rank"].item()
 
             # get scheme
             try:
@@ -64,7 +65,7 @@ class BaseClusterNet(BaseDecomposeNet, ABC):
                 pass
 
             # fake sparsify with simplest sparsifier
-            rank_j = 1
+            rank_j = j_rank
             pruner = BaseDecomposeNet._get_pruner(self, ell)
             sparsifier = SequencialClusterSparsifier(pruner)
             weights_hat = sparsifier.sparsify(
@@ -72,8 +73,8 @@ class BaseClusterNet(BaseDecomposeNet, ABC):
                 arrangements=arrangements
             )
             # check if we also need to set bias
-            bias_key = f"{mod_name}.decoding.bias"
-            if f"{mod_name}.decoding.bias" in state_dict:
+            bias_key = f"{mod_name}.decoding.layers.0.bias"
+            if f"{mod_name}.decoding.layers.0.bias" in state_dict:
                 bias = state_dict[bias_key]
             else:
                 module.bias = None

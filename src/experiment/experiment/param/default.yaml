@@ -71,6 +71,8 @@ network_names:
   ALDSNetSimple: ALDS-Simple3
   ALDSNetSimple5: ALDS-Simple5
   ALDSNetOne: "ALDS (One-shot)"
+  TempNetALDSerrorJOpt: MDCM (ours)
+  TempNetALDSerror: PC (ours)
 
 # colors for networks in plots
 # if not provided random named color from matplotlib will be used.
@@ -108,3 +110,6 @@ network_colors:
   ALDSNetSimple: "#b4d8e7"
   ALDSNetSimple5: "#808080"
   ALDSNetOne: goldenrod
+  TempNetALDSerrorJOpt: crimson
+  TempNetALDSerror: firebrick
+

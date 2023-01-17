@@ -11,3 +11,6 @@ from .alds_net import (
     ALDSNetSimple,
     ALDSNetSimple5,
 )
+from .alds_allocator import (
+    ALDSErrorIterativeAllocator
+)

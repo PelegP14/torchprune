@@ -4,6 +4,7 @@ from enum import Enum, unique
 from typing import final
 import torch
 import torch.nn as nn
+import torch.nn.utils.prune as prune
 
 from ...util import tensor
 
@@ -155,6 +156,7 @@ class ProjectedModule(nn.Module, ABC):
         decoding.weight = nn.Parameter(w_dec)
         bias = module_original.bias
         decoding.bias = None if bias is None else nn.Parameter(bias)
+        prune.l1_unstructured(decoding,'weight',torch.count_nonzero(decoding.weight.data == 0).item())
 
         # set new encoding
         w_enc = torch.cat([w_enc for _, w_enc in weights_hat], dim=0)
@@ -164,6 +166,7 @@ class ProjectedModule(nn.Module, ABC):
             bias=False,
         )
         encoding.weight = nn.Parameter(w_enc)
+        prune.l1_unstructured(encoding, 'weight', torch.count_nonzero(encoding.weight.data == 0).item())
 
         self.encoding = encoding
         self.decoding = decoding
@@ -193,10 +196,10 @@ class ProjectedModule(nn.Module, ABC):
         weight_enc = torch.block_diag(
             *[
                 scheme.fold(w_enc)
-                for w_enc in torch.chunk(encoding.weight, num_groups, dim=0)
+                for w_enc in torch.chunk(encoding.weight_orig, num_groups, dim=0)
             ]
         )
-        weight_dec = scheme.fold(decoding.weight)
+        weight_dec = scheme.fold(decoding.weight_orig)
 
         # retrieve module kwargs from scheme and kernel_size
         kwargs_original = scheme.compose_kwargs(decoding, encoding)

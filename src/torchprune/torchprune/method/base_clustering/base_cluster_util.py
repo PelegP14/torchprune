@@ -42,7 +42,7 @@ class GroupedLinear(nn.Module):
         return out
 
     def set_weights(self,weights,bias):
-        if self.use_bias:
+        if self.use_bias and bias is not None:
             biases = torch.chunk(bias, len(self.arrangements))
             for i in range(len(self.layers)):
                 self.layers[i].bias = nn.Parameter(biases[i])
@@ -64,6 +64,11 @@ class GroupedConv2d(nn.Module):
         self.arrangements = arrangements
         self.j_rank = j_rank
         self.use_bias = bias
+        self.kernel_size = kernel_size
+        self.stride = stride
+        self.padding = padding
+        self.dilation = dilation
+        self.padding_mode = padding_mode
 
     def forward(self, x):
         out = [self.layers[i](x[:,self.arrangements[i]]) for i in range(len(self.arrangements))]
@@ -71,7 +76,7 @@ class GroupedConv2d(nn.Module):
         return out
 
     def set_weights(self,weights,bias):
-        if self.use_bias:
+        if self.use_bias and bias is not None:
             biases = torch.chunk(bias, len(self.arrangements))
             for i in range(len(self.layers)):
                 self.layers[i].bias = nn.Parameter(biases[i])
@@ -159,7 +164,9 @@ class ProjectedModule(nn.Module, ABC):
         # set new decoding
         w_dec = torch.cat([w_dec for (w_dec, _), _ in weights_hat], dim=1)
         decoding = self._grouped_module_type(
-            **self._get_init_kwargs((w_dec,), (torch.arange(w_dec.shape[1]),)), **kwargs_dec
+            **self._get_init_kwargs((w_dec,), (torch.arange(w_dec.shape[1]),)),
+            **kwargs_dec,
+            bias=module_original.bias is not None
         )
         bias = module_original.bias
         decoding.set_weights((w_dec,), bias)
@@ -181,7 +188,7 @@ class ProjectedModule(nn.Module, ABC):
         self.register_buffer("k_splits", torch.tensor(k_splits))
         for i in range(k_splits):
             self.register_buffer(f"arrangement{i}", weights_hat[i][1])
-
+        self.register_buffer("j_rank", torch.tensor(w_dec.shape[1]/k_splits))
         # register scheme enum value as buffer
         self.register_buffer("scheme_value", torch.tensor(scheme.value))
 

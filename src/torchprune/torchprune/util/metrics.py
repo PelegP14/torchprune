@@ -70,7 +70,7 @@ class TopK(AbstractMetric):
         # and target has shape [batches, 1]
         # so let's bring it into that shape
         output = output.transpose(0, 1).reshape(output.shape[1], -1).t()
-        target = target.squeeze().unsqueeze(1)
+        target = target.unsqueeze(1)
         target = target.transpose(0, 1).view(target.shape[1], -1).t()
 
         # ignore indices outside range of potential classes

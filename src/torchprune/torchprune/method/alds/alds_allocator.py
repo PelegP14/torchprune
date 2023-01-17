@@ -530,6 +530,10 @@ class ALDSErrorIterativeAllocator(ALDSErrorAllocator):
         i_best = -1
         k_splits_best = torch.zeros_like(self._k_splits)
         s_values_best = torch.zeros_like(self._scheme_values)
+        ###############################################################
+        ########################## TODO: REMEMBER TO CHANGE
+        ###############################################################
+        # np.random.seed(79)
 
         for i in range(self._num_seeds):
             # try optimizing for the current seed i

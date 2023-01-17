@@ -26,9 +26,14 @@ class BaseTracker(ABC, nn.Module):
     def _set_tracking(self, tracking_mode=True):
         if tracking_mode and self._hook_handle is None:
             self._hook_handle = self.module.register_forward_hook(self._hook)
-            self._backward_hook_handle = self.module.weight.register_hook(
-                self._backward_hook
-            )
+            if hasattr(self.module,"weight_orig"):
+                self._backward_hook_handle = self.module.weight_orig.register_hook(
+                    self._backward_hook
+                )
+            else:
+                self._backward_hook_handle = self.module.weight.register_hook(
+                    self._backward_hook
+                )
         elif tracking_mode is False and self._hook_handle is not None:
             self._hook_handle.remove()
             self._backward_hook_handle.remove()

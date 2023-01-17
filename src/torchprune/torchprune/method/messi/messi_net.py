@@ -2,7 +2,7 @@
 
 from ..base_decompose import BaseDecomposeNet
 from ..base_clustering import BaseClusterNet
-from .messi_allocator import MessiAllocator
+from .messi_allocator import MessiAllocator, MessiClusterAllocator
 from .messi_sparsifier import MessiSparsifier, MessiClusterSparsifier
 
 
@@ -40,7 +40,7 @@ class MessiNetEfficient(BaseClusterNet):
     @property
     def _allocator_type(self):
         """Get allocator type."""
-        return MessiAllocator
+        return MessiClusterAllocator
 
     @property
     def _sparsifier_type(self):

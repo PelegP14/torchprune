@@ -835,7 +835,7 @@ class Logger:
                 title=title,
             )
             img_err = grapher_error.graph(
-                percentage_x=True, percentage_y=True, store=store_figs
+                percentage_x=True, percentage_y=True, store=store_figs, use_best_rep=True
             )
 
             grapher_error5 = Grapher(
