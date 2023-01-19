@@ -111,11 +111,11 @@ for epoch in range(20):
     print("epoch {}: {:.3f}".format(epoch,success/count))
 
 kr = 0.5
-nets = [tp.TempNetEfficient]
+nets = [tp.SVDFrobeniusNet]
 vals = []
 for i,option in enumerate(nets):
     print("\n\n\n\n\n\n\n\n")
-    comp_net = option(net,train_loader,None)
+    comp_net = option(net,None,torch.nn.CrossEntropyLoss())
     comp_net.compress(keep_ratio=kr)
     print("size before: {}".format(comp_net.size()))
     val = [0,0,0,0]

@@ -19,5 +19,6 @@ from .temp_net import (
     TempNetJOpt,
     TempNetPCwJOPT,
     TempNetUseBest,
-    TempNetEfficient
+    TempNetEfficient,
+    TempNetPCEfficient
 )

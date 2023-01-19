@@ -205,4 +205,11 @@ class TempNetEfficient(BaseClusterNet):
         """Get number of k splits in each layer."""
         return 3
 
+class TempNetPCEfficient(TempNetEfficient):
+
+    @property
+    def _sparsifier_type(self):
+        """Get sparsifier type."""
+        return MessiClusterSparsifier
+
 

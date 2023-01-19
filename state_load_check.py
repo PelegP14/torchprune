@@ -58,7 +58,7 @@ for epoch in range(20):
     print("epoch {}: {:.3f}".format(epoch,success/count))
 
 kr = 0.5
-nets = [tp.MessiNetEfficient,tp.SnipNet,tp.SiPPNet,tp.TempNetALDSerrorJOpt,tp.ALDSNet,tp.MessiNet]
+nets = [tp.TempNetEfficient]
 vals = []
 for i,option in enumerate(nets):
     print("\n\n\n\n\n\n\n\n")
