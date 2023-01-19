@@ -22,7 +22,8 @@ from .temp_allocator import (
     TempErrorIterativeAllocatorFrobenius,
     TempErrorIterativeAllocatorJOPT,
     TempErrorIterativeAllocatorPCwJOPT,
-    TempErrorIterativeAllocatorUseBest
+    TempErrorIterativeAllocatorUseBest,
+    TempClusteringIterativeAllocator
 )
 from .temp_sparsifier import (
     TempSparsifier,
@@ -31,7 +32,8 @@ from .temp_sparsifier import (
     TempMeanClusteringSparsifier,
     TempFrobeniusSparsifier,
     TempJOptSparsifier,
-    TempPickBestSparsifier
+    TempPickBestSparsifier,
+    TempSparsifierEfficient
 )
 
 
@@ -186,5 +188,21 @@ class TempNetUseBest(TempNetALDSerror):
     def _sparsifier_type(self):
         """Get sparsifier type."""
         return TempPickBestSparsifier
+
+class TempNetEfficient(BaseClusterNet):
+    @property
+    def _allocator_type(self):
+        """Get allocator type."""
+        return TempClusteringIterativeAllocator
+
+    @property
+    def _sparsifier_type(self):
+        """Get sparsifier type."""
+        return TempSparsifierEfficient
+
+    @property
+    def _k_split(self):
+        """Get number of k splits in each layer."""
+        return 3
 
 

@@ -2,6 +2,7 @@
 from abc import ABC, abstractmethod
 import torch
 import torch.nn as nn
+import numpy as np
 
 from ..base_decompose.base_decompose_util import FoldScheme
 from ...util import tensor
@@ -26,14 +27,14 @@ def set_attr(obj, names, val):
 class GroupedLinear(nn.Module):
     """A linear layer that supports channel clustering."""
 
-    def __init__(self, arrangements, j_rank, bias=True):
+    def __init__(self, arrangements, j_ranks, bias=True):
         """Initialize a list of linear layers each corresponding to a cluster."""
         super().__init__()
         self.layers = nn.ModuleList(
-            [nn.Linear(arrangement.shape[0],j_rank,bias) for arrangement in arrangements]
+            [nn.Linear(arrangement.shape[0], j_rank, bias) for arrangement, j_rank in zip(arrangements, j_ranks)]
         )
         self.arrangements = arrangements
-        self.j_rank = j_rank
+        self.j_ranks = j_ranks
         self.use_bias = bias
 
     def forward(self, x):
@@ -43,9 +44,10 @@ class GroupedLinear(nn.Module):
 
     def set_weights(self,weights,bias):
         if self.use_bias and bias is not None:
-            biases = torch.chunk(bias, len(self.arrangements))
+            start = 0
             for i in range(len(self.layers)):
-                self.layers[i].bias = nn.Parameter(biases[i])
+                self.layers[i].bias = nn.Parameter(bias[start:start + self.j_ranks[i]])
+                start += self.j_ranks[i]
 
         for i in range(len(self.layers)):
             self.layers[i].weight = nn.Parameter(weights[i])
@@ -54,15 +56,15 @@ class GroupedLinear(nn.Module):
 class GroupedConv2d(nn.Module):
     """A Conv2d layer that supports channel clustering"""
 
-    def __init__(self, arrangements, j_rank, kernel_size, stride, padding, dilation, padding_mode, bias=True):
+    def __init__(self, arrangements, j_ranks, kernel_size, stride, padding, dilation, padding_mode, bias=True):
         """Initialize a list of conv layers each corresponding to a cluster."""
         super().__init__()
         self.layers = nn.ModuleList(
             [nn.Conv2d(arrangement.shape[0], j_rank, kernel_size, stride=stride, padding=padding
-                       , dilation=dilation, bias=bias, padding_mode=padding_mode) for arrangement in arrangements]
+                       , dilation=dilation, bias=bias, padding_mode=padding_mode) for arrangement, j_rank in zip(arrangements,j_ranks)]
         )
         self.arrangements = arrangements
-        self.j_rank = j_rank
+        self.j_ranks = j_ranks
         self.use_bias = bias
         self.kernel_size = kernel_size
         self.stride = stride
@@ -77,9 +79,10 @@ class GroupedConv2d(nn.Module):
 
     def set_weights(self,weights,bias):
         if self.use_bias and bias is not None:
-            biases = torch.chunk(bias, len(self.arrangements))
+            start = 0
             for i in range(len(self.layers)):
-                self.layers[i].bias = nn.Parameter(biases[i])
+                self.layers[i].bias = nn.Parameter(bias[start:start+self.j_ranks[i]])
+                start += self.j_ranks[i]
 
         for i in range(len(self.layers)):
             self.layers[i].weight = nn.Parameter(weights[i])
@@ -184,11 +187,14 @@ class ProjectedModule(nn.Module, ABC):
         self.encoding = encoding
         self.decoding = decoding
 
+        # in the case where some cluster gets j=0
+        self.in_f = getattr(module_original, f"in_{self._feature_name}")
+
         # register arrangements as buffers
         self.register_buffer("k_splits", torch.tensor(k_splits))
         for i in range(k_splits):
             self.register_buffer(f"arrangement{i}", weights_hat[i][1])
-        self.register_buffer("j_rank", torch.tensor(w_dec.shape[1]/k_splits))
+        self.register_buffer("j_ranks", torch.tensor([w.shape[0] for w in w_enc]))
         # register scheme enum value as buffer
         self.register_buffer("scheme_value", torch.tensor(scheme.value))
 
@@ -211,8 +217,17 @@ class ProjectedModule(nn.Module, ABC):
                 for layer in encoding.layers
             ]
         )
+
         # get the total arrangement and rearrange the weights back
         total_arrangement = torch.cat(encoding.arrangements)
+        # add back missing channels (that got j=0)
+        full_range = np.arange(self.in_f)
+        indices = np.where(np.isin(full_range, total_arrangement.numpy(), assume_unique=True, invert=True))[0]
+        if indices.size != 0:
+            indices = torch.tensor(indices)
+            total_arrangement = torch.cat((total_arrangement, indices))
+            pad = torch.zeros((weight_enc.shape[0],indices.shape[0]))
+            weight_enc = torch.cat((weight_enc,pad),dim=1)
         orig_arrangement = torch.sort(total_arrangement)[1]
         weight_enc = weight_enc[:,orig_arrangement]
 
@@ -269,7 +284,7 @@ class ProjectedConv2d(ProjectedModule):
     def _get_init_kwargs(self, weights, arrangements):
         return {
             "arrangements": arrangements,
-            "j_rank": weights[0].shape[0],
+            "j_ranks": [weight.shape[0] for weight in weights],
         }
 
     def _get_ungrouped_init_kwargs(self, weight):
@@ -301,7 +316,7 @@ class ProjectedLinear(ProjectedModule):
     def _get_init_kwargs(self, weights, arrangements):
         return {
             "arrangements": arrangements,
-            "j_rank": weights[0].shape[0],
+            "j_ranks": [weight.shape[0] for weight in weights],
         }
 
     def _get_ungrouped_init_kwargs(self, weight):

@@ -18,5 +18,6 @@ from .temp_net import (
     TempNetALDSerrorJOpt,
     TempNetJOpt,
     TempNetPCwJOPT,
-    TempNetUseBest
+    TempNetUseBest,
+    TempNetEfficient
 )

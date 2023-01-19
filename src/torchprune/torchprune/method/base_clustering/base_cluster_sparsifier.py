@@ -11,7 +11,7 @@ from .base_cluster_util import FoldScheme
 class BaseClusterSparsifier(BaseSparsifier, ABC):
     """Base sparsifier for any type of cluster-decomposition-based compression."""
 
-    def sparsify(self, rank_stats, arrangements=None):
+    def sparsify(self, rank_stats, arrangements=None, j_ranks=None):
         """Sparsify to the desired number of features (rank_j)."""
         # obtain current set of stats.
         rank_j, k_split, scheme_val = [int(stat.item()) for stat in rank_stats]
@@ -25,9 +25,9 @@ class BaseClusterSparsifier(BaseSparsifier, ABC):
 
         # now we sparsify
         # if the order is given we sparsify by it
-        if arrangements is not None:
+        if arrangements is not None and j_ranks is not None:
             weights_hat = self._recreate(
-                self._tensor.detach(), rank_j, arrangements, scheme
+                self._tensor.detach(), j_ranks, arrangements, scheme
             )
         else:
             # if we need to find the arrangements
@@ -36,9 +36,10 @@ class BaseClusterSparsifier(BaseSparsifier, ABC):
             )
 
         # finally we unfold the decomposed weights and keep the order of the input nodes
+        temp_len = len(weights_hat)
         weights_hat = [
             (scheme.unfold_decomposition(u, v, kernel_size), order)
-            for u, v, order in weights_hat
+            for u, v, order in weights_hat if (torch.numel(u) > 0 and torch.numel(v) > 0)
         ]
 
         # check that embedding dimensions agree
@@ -63,7 +64,7 @@ class BaseClusterSparsifier(BaseSparsifier, ABC):
     def _sparsify(self, tensor, rank_j, k_split, scheme):
         """Sparsify to the desired number of features (rank_j)."""
 
-    def _recreate(self, tensor, rank_j, arrangements, scheme):
+    def _recreate(self, tensor, j_ranks, arrangements, scheme):
         # get the clusters as specified by the given arrangements
         tensor_clusters = [tensor[:, order] for order in arrangements]
 
@@ -80,7 +81,9 @@ class BaseClusterSparsifier(BaseSparsifier, ABC):
         ]
 
         # remove undesired parts of approximation for lower singular values
-        return [(u[:, :rank_j], v[:rank_j, :], order) for (u, v), order in zip(svd_clusters, arrangements)]
+        return [(u[:, :j_rank], v[:j_rank, :], order) for (u, v), order, j_rank in
+                zip(svd_clusters, arrangements, j_ranks)]
+
 
 class SequencialClusterSparsifier(BaseClusterSparsifier):
     """A cluster sparsifier that assumes the clusters are in sequence and have the same size."""
@@ -89,7 +92,7 @@ class SequencialClusterSparsifier(BaseClusterSparsifier):
         """Sparsify to the desired number of features (rank_j)."""
         # get chunks from dim 1 (input dimension)
         tensor_chunks = torch.chunk(tensor, k_split, dim=1)
-        orders = torch.chunk(torch.arange(tensor.shape[1]),k_split)
+        orders = torch.chunk(torch.arange(tensor.shape[1]), k_split)
 
         # fold tensor chunks
         tensor_chunks = [scheme.fold(chunk) for chunk in tensor_chunks]
@@ -104,4 +107,4 @@ class SequencialClusterSparsifier(BaseClusterSparsifier):
         ]
 
         # remove undesired parts of approximation for lower singular values
-        return [(u[:, :rank_j], v[:rank_j, :], order) for (u, v), order in zip(svd_chunks,orders)]
+        return [(u[:, :rank_j], v[:rank_j, :], order) for (u, v), order in zip(svd_chunks, orders)]

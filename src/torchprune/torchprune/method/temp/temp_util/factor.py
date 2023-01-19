@@ -231,6 +231,25 @@ def raw_j_opt(A, j, k, steps=300, NUM_INIT_FOR_EM=10, verbose=True):
         listV.append(V_z)
     return partition, listU, listV
 
+def raw_j_opt_for_clustering(A, j, k, steps=300, NUM_INIT_FOR_EM=10, verbose=True):
+    flats, j_s, partition = getJOpt(
+        A, j, k, steps=steps, NUM_INIT_FOR_EM=NUM_INIT_FOR_EM, verbose=verbose
+    )
+
+    n = A.shape[0]
+    idx_list = [[row for row in range(n) if partition[row] == z] for z in range(k)]
+    A_list = [A[idx, :] for idx in idx_list]
+
+    listU = []
+    listV = []
+
+    for z in range(k):
+        A_z = A_list[z]
+        U_z, V_z = lowRank(A_z, j_s[z])
+        listU.append(U_z)
+        listV.append(V_z)
+    return partition, listU, listV, idx_list
+
 def calc_j_opt_error(A, j, k, steps=300, NUM_INIT_FOR_EM=10, verbose=True):
     flats, j_s, partition = getJOpt(
         A, j, k, steps=steps, NUM_INIT_FOR_EM=NUM_INIT_FOR_EM, verbose=verbose

@@ -4,6 +4,7 @@ import torch
 import numpy as np
 
 from ..base_decompose import GroupedDecomposeSparsifier
+from ..base_clustering import SequencialClusterSparsifier
 from .temp_util import factor
 
 class TempSparsifier(GroupedDecomposeSparsifier):
@@ -200,3 +201,57 @@ class TempPickBestSparsifier(TempSparsifier):
                 torch.tensor(u_stitched.T).float().to(tensor.device),
             )
         ]
+
+class TempSparsifierEfficient(SequencialClusterSparsifier):
+    @property
+    def _em_steps(self):
+        return 300
+
+    @property
+    def _num_init_em(self):
+        return 10
+
+    @property
+    def can_improve_func(self):
+        return factor.can_improve_max
+
+    def _sparsify_with_temp(self, tensor, rank_j, k_split, scheme):
+        """Sparsify to the desired number of features (rank_j) with Messi."""
+        # get projective clustering
+        # Convention:
+        #  1. y = A^t * x
+        #  2. A = UV
+        #  3. y = V^T * (U^T * x)
+        partition, list_u, list_v, arrangements = factor.raw_j_opt_for_clustering(
+            scheme.fold(tensor.detach()).t().cpu().numpy(),
+            j=rank_j,
+            k=k_split,
+        )
+
+        # Convert it to pytorch/numpy convention ...
+        # Pytorch convention:
+        #  1. y = A * x
+        #  2. y = U * (V * x)
+        # weights_hat = [U, V]
+        return [
+            (
+                torch.tensor(v.T).float().to(tensor.device),
+                torch.tensor(u.T).float().to(tensor.device),
+                torch.tensor(arrangement).long().to(tensor.device)
+            ) for u, v, arrangement in zip(list_u, list_v, arrangements)
+        ]
+
+    def _sparsify(self, tensor, rank_j, k_split, scheme):
+        """Sparsify to the desired number of features (rank_j)."""
+        # in some rare occassion Messi fails
+        # --> then let's just use grouped projective sparsifier and stitch it
+        print("sparsifying k={}, j={}".format(k_split, rank_j))
+        try:
+            return self._sparsify_with_temp(tensor, rank_j, k_split, scheme)
+        except ValueError as e:
+            weights_hat = super()._sparsify(tensor, rank_j, k_split, scheme)
+            print(
+                "Temp Sparsification failed."
+                " Falling back to grouped decomposition sparsification"
+            )
+            return weights_hat
