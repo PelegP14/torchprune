@@ -14,10 +14,8 @@ experiments:
     - "ALDSNet"
     - "TempNetPCEfficient"
     - "TempNetEfficient"
-    - "SVDFrobeniusNet"
-    - "PFPNet"
-    - "PCANet"
-    - "LearnedRankNet"
+    - "TempNetALDSerrorJOpt"
+    - "TempNetALDSerror"
   mode: "retrain"
 
   numRepetitions: 1

@@ -111,7 +111,7 @@ for epoch in range(20):
     print("epoch {}: {:.3f}".format(epoch,success/count))
 
 kr = 0.5
-nets = [tp.SVDFrobeniusNet]
+nets = [tp.TempNet,tp.TempNetJOpt,tp.ALDSNet]
 vals = []
 for i,option in enumerate(nets):
     print("\n\n\n\n\n\n\n\n")

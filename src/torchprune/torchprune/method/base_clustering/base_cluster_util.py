@@ -222,11 +222,11 @@ class ProjectedModule(nn.Module, ABC):
         total_arrangement = torch.cat(encoding.arrangements)
         # add back missing channels (that got j=0)
         full_range = np.arange(self.in_f)
-        indices = np.where(np.isin(full_range, total_arrangement.numpy(), assume_unique=True, invert=True))[0]
+        indices = np.where(np.isin(full_range, total_arrangement.cpu().numpy(), assume_unique=True, invert=True))[0]
         if indices.size != 0:
-            indices = torch.tensor(indices)
+            indices = torch.tensor(indices).to(total_arrangement.device)
             total_arrangement = torch.cat((total_arrangement, indices))
-            pad = torch.zeros((weight_enc.shape[0],indices.shape[0]))
+            pad = torch.zeros((weight_enc.shape[0],indices.shape[0])).to(weight_enc.device)
             weight_enc = torch.cat((weight_enc,pad),dim=1)
         orig_arrangement = torch.sort(total_arrangement)[1]
         weight_enc = weight_enc[:,orig_arrangement]

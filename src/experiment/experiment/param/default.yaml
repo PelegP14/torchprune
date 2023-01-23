@@ -73,8 +73,6 @@ network_names:
   ALDSNetOne: "ALDS (One-shot)"
   TempNetALDSerrorJOpt: MDCM (ours)
   TempNetALDSerror: PC (ours)
-  TempNetEfficient: MDCM (ours)
-  TempNetPCEfficient: PC (ours)
 
 # colors for networks in plots
 # if not provided random named color from matplotlib will be used.
@@ -96,7 +94,7 @@ network_colors:
   SVDErrorNet: blueviolet
   LearnedRankNet: green
   LearnedRankNetScheme0: green
-  SiPPNet: orange
+  #SiPPNet: orange
   SiPPNetHybrid: "#b4d8e7"
   SiPPNetRand: blue
   SnipNet: lightskyblue
@@ -114,6 +112,4 @@ network_colors:
   ALDSNetOne: goldenrod
   TempNetALDSerrorJOpt: crimson
   TempNetALDSerror: firebrick
-  TempNetEfficient: crimson
-  TempNetPCEfficient: firebrick
 

@@ -637,26 +637,26 @@ class TempErrorIterativeAllocatorJOPT(TempErrorIterativeAllocator):
 
         rel_error = []
         for j in range(rank_k):
-            error = factor.calc_j_opt_error(
-                weight,
-                j=j,
-                k=k_split,
-                verbose=False
-            )
-            rel_error.append(error)
-            # partition, list_u, list_v, error = factor.raw_j_opt(
+            # error = factor.calc_j_opt_error(
             #     weight,
             #     j=j,
             #     k=k_split,
             #     verbose=False
             # )
-            # u_stitched, v_stitched = factor.stitch(partition, list_u, list_v)
-            #
-            # new_weight = u_stitched @ v_stitched
-            #
-            # diff = new_weight - weight
-            #
-            # rel_error.append(np.linalg.norm(diff, ord=self._norm_ord))
+            # rel_error.append(error)
+            partition, list_u, list_v = factor.raw_j_opt(
+                weight,
+                j=j,
+                k=k_split,
+                verbose=False
+            )
+            u_stitched, v_stitched = factor.stitch(partition, list_u, list_v)
+
+            new_weight = u_stitched @ v_stitched
+
+            diff = new_weight - weight
+
+            rel_error.append(np.linalg.norm(diff, ord=self._norm_ord))
 
 
         # # compute flats and errors
@@ -665,7 +665,7 @@ class TempErrorIterativeAllocatorJOPT(TempErrorIterativeAllocator):
         #     flats = factor.getJOpt(weight, j, k_split, verbose=False)[0]
         #     rel_error.append(factor.getCost(weight, flats))
 
-        rel_error = torch.tensor(rel_error, device=device) / op_norm
+        rel_error = torch.tensor(rel_error, device=device) / (op_norm*np.sqrt(k_split))
         return rel_error
 
     def _get_possible_k(self, w_shape_in):
