@@ -20,5 +20,8 @@ from .temp_net import (
     TempNetPCwJOPT,
     TempNetUseBest,
     TempNetEfficient,
-    TempNetPCEfficient
+    TempNetPCEfficient,
+    TempNetUniformSamplePC,
+    TempNetUniformSampleJOPT,
+    TempNetPracticalSpeedUpPC
 )

@@ -213,6 +213,89 @@ def EMLikeAlg(P, w, j, k, steps, NUM_INIT_FOR_EM=10):
         )
     return min_Vs, time.time() - start_time
 
+def EMLikeAlgGivenInit(P, w, j, k, partition, steps):
+    """
+    The function at hand, is an EM-like algorithm which is heuristic in nature. It finds a suboptimal solution for the
+    (K,J)-projective clustering problem with respect to a user chosen
+
+    :param P: A weighted set, namely, a PointSet object
+    :param j: An integer denoting the desired dimension of each flat (affine subspace)
+    :param k: An integer denoting the number of j-flats
+    :param steps: An integer denoting the max number of EM steps
+    :return: A list of k j-flats which locally optimize the cost function
+    """
+
+    start_time = time.time()
+    #######################################
+    #### TODO: REMEMBER TO CHANGE #########
+    ########################################
+    np.random.seed(random.seed())
+    # np.random.seed(42)
+    n, d = P.shape
+    min_Vs = None
+    optimal_cost = np.inf
+    # print ("started")
+    for iter in range(-1, 1):  # run EM for 10 random initializations
+        Vs = np.empty((k, max(j,1), d))
+        idxs = np.arange(n)
+        if iter == -1:
+            idxs = np.array_split(idxs, k)  # ;print(idxs)
+        else:
+            idxs = [np.where(np.array(partition) == i)[0] for i in range(k)]
+        for i in range(k):  # initialize k random orthogonal matrices
+            Vs[i, :, :], _ = computeSuboptimalSubspace(
+                P[idxs[i], :], w[idxs[i]], j, padding=Vs.shape[1]
+            )
+
+        last_error = computeCost(P,w,Vs)[0]
+        improved = True
+        count = 0
+        while improved and count<steps:
+            # find best k j-flats which can attain local optimum
+            count += 1
+            dists = np.empty(
+                (n, k)
+            )  # distance of point to each one of the k j-flats
+            for l in range(k):
+                _, dists[:, l] = computeCost(P, w, Vs[l, :, :])
+
+            cluster_indices = np.argmin(
+                dists, 1
+            )  # determine for each point, the closest flat to it
+            unique_idxs = np.unique(
+                cluster_indices
+            )  # attain the number of clusters
+
+            for (
+                    idx
+            ) in (
+                    unique_idxs
+            ):  # recompute better flats with respect to the updated cluster matching
+                Vs[idx, :, :], _ = computeSuboptimalSubspace(
+                    P[np.where(cluster_indices == idx)[0], :],
+                    w[np.where(cluster_indices == idx)[0]],
+                    j,
+                    padding=Vs.shape[1]
+                )
+
+            current_cost = computeCost(P, w, Vs)[0]
+            if current_cost < last_error:
+                last_error = current_cost
+            else:
+                improved = False
+
+        print("took {} iterations to converge".format(count))
+        current_cost = computeCost(P, w, Vs)[0]
+        if current_cost < optimal_cost:
+            min_Vs = copy.deepcopy(Vs)
+            optimal_cost = current_cost
+        print(
+            "finished iteration number {} with cost {}".format(
+                iter, optimal_cost
+            )
+        )
+    return min_Vs, time.time() - start_time
+
 
 def EMLikeAlgWithJOpt(P, w, j, k, steps, NUM_INIT_FOR_EM=10):
     """

@@ -1,10 +1,10 @@
 network:
-  name: "wrn16_8"
-  dataset: "CIFAR10"
-  outputSize: 10
+  name: "resnet18"
+  dataset: "ImageNet"
+  outputSize: 1000
 
 training:
-  file: "training/cifar/wrn.yaml"
+  file: "training/imagenet/resnet.yaml"
 
 retraining:
   numEpochs: 0
@@ -14,8 +14,8 @@ experiments:
     - "ALDSNet"
     - "PCANet"
     - "PFPNet"
-    - "TempNetUniformSamplePC"
-    - "TempNetUniformSampleJOPT"
+    - "TempNetJOpt"
+    - "TempNet"
     - "MessiNet"
     - "SnipNet"
     - "SiPPNet"
@@ -25,13 +25,14 @@ experiments:
   numNets: 3
 
   plotting:
-    minVal: 0.02
-    maxVal: 0.85
+    minVal: 0.3
+    maxVal: 0.99
 
   spacing:
     - type: "geometric"
-      numIntervals: 20
-      maxVal: 0.85
-      minVal: 0.03
+      numIntervals: 15
+      maxVal: 0.98
+      minVal: 0.15
 
   retrainIterations: -1
+

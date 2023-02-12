@@ -1,10 +1,10 @@
 network:
-  name: "wrn16_8"
+  name: "resnet20"
   dataset: "CIFAR10"
   outputSize: 10
 
 training:
-  file: "training/cifar/wrn.yaml"
+  file: "training/cifar/resnet.yaml"
 
 retraining:
   numEpochs: 0
@@ -12,13 +12,9 @@ retraining:
 experiments:
   methods:
     - "ALDSNet"
-    - "PCANet"
-    - "PFPNet"
+    - "TempNet"
     - "TempNetUniformSamplePC"
-    - "TempNetUniformSampleJOPT"
-    - "MessiNet"
-    - "SnipNet"
-    - "SiPPNet"
+    - "TempNetPracticalSpeedUpPC"
   mode: "retrain"
 
   numRepetitions: 1

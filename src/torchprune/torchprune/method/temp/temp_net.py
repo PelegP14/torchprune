@@ -23,7 +23,10 @@ from .temp_allocator import (
     TempErrorIterativeAllocatorJOPT,
     TempErrorIterativeAllocatorPCwJOPT,
     TempErrorIterativeAllocatorUseBest,
-    TempClusteringIterativeAllocator
+    TempClusteringIterativeAllocator,
+    TempErrorUseCoresetPC,
+    TempErrorUseCoresetJOPT,
+    TempErrorPracticalSpeedUp
 )
 from .temp_sparsifier import (
     TempSparsifier,
@@ -188,6 +191,21 @@ class TempNetUseBest(TempNetALDSerror):
     def _sparsifier_type(self):
         """Get sparsifier type."""
         return TempPickBestSparsifier
+
+class TempNetUniformSamplePC(TempNet):
+    @property
+    def _allocator_type(self):
+        return TempErrorUseCoresetPC
+
+class TempNetUniformSampleJOPT(TempNet):
+    @property
+    def _allocator_type(self):
+        return TempErrorUseCoresetPC
+class TempNetPracticalSpeedUpPC(TempNet):
+
+    @property
+    def _allocator_type(self):
+        return TempErrorPracticalSpeedUp
 
 class TempNetEfficient(BaseClusterNet):
     @property

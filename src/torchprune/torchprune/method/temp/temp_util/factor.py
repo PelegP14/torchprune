@@ -1,9 +1,9 @@
 import numpy as np
-from .testEM2 import computeCost, computeDistanceToSubspace, EMLikeAlg, EMLikeAlgWithJOpt, computeSuboptimalSubspace
+from .testEM2 import computeCost, computeDistanceToSubspace, EMLikeAlg, EMLikeAlgWithJOpt, computeSuboptimalSubspace, EMLikeAlgGivenInit
 
 
 def getProjectiveClustering(
-        P, j, k, verbose=True, steps=300, NUM_INIT_FOR_EM=10
+        P, j, k, verbose=True, steps=50, NUM_INIT_FOR_EM=10
 ):
     n = P.shape[0]
     w = np.ones(n)  # unit weights
@@ -22,9 +22,28 @@ def getProjectiveClustering(
 
     return flats
 
+def getProjectiveClusteringGivenInit(
+        P, j, k, partition, verbose=True, steps=50
+):
+    n = P.shape[0]
+    w = np.ones(n)  # unit weights
+    # steps = 15 # number of EM steps
+
+    if not verbose:
+        import os
+        import sys
+
+        sys.stdout = open(os.devnull, "w")  # disable printing
+    flats, runtime = EMLikeAlgGivenInit(
+        P, w, j, k, partition, steps=steps
+    )
+    if not verbose:
+        sys.stdout = sys.__stdout__  # re-enable printing
+
+    return flats
 
 def getProjectiveClusteringWithJOPT(
-        P, j, k, verbose=True, steps=300, NUM_INIT_FOR_EM=10
+        P, j, k, verbose=True, steps=50, NUM_INIT_FOR_EM=10
 ):
     n = P.shape[0]
     w = np.ones(n)  # unit weights
@@ -66,7 +85,7 @@ def getProjectiveClusteringWithJOPT(
 
 
 def getJOpt(
-        P, j, k, verbose=True, steps=300, NUM_INIT_FOR_EM=10
+        P, j, k, verbose=True, steps=50, NUM_INIT_FOR_EM=10
 ):
     n = P.shape[0]
     w = np.ones(n)  # unit weights
@@ -176,7 +195,7 @@ def raw_alds_base(A, j, k, can_improve_func):
     return partition, listU, listV
 
 
-def raw_messi_base(A, j, k, can_improve_func, steps=300, NUM_INIT_FOR_EM=10, verbose=True):
+def raw_messi_base(A, j, k, can_improve_func, steps=50, NUM_INIT_FOR_EM=10, verbose=True):
     # returns (k, j, d) tensor to represent the k flats
     # by j basis vectors in R^d
     flats = getProjectiveClustering(
@@ -212,7 +231,7 @@ def raw_messi_base(A, j, k, can_improve_func, steps=300, NUM_INIT_FOR_EM=10, ver
     return partition, listU, listV
 
 
-def raw_j_opt(A, j, k, steps=300, NUM_INIT_FOR_EM=10, verbose=True):
+def raw_j_opt(A, j, k, steps=50, NUM_INIT_FOR_EM=10, verbose=True):
     flats, j_s, partition = getJOpt(
         A, j, k, steps=steps, NUM_INIT_FOR_EM=NUM_INIT_FOR_EM, verbose=verbose
     )
@@ -231,7 +250,7 @@ def raw_j_opt(A, j, k, steps=300, NUM_INIT_FOR_EM=10, verbose=True):
         listV.append(V_z)
     return partition, listU, listV
 
-def raw_j_opt_for_clustering(A, j, k, steps=300, NUM_INIT_FOR_EM=10, verbose=True):
+def raw_j_opt_for_clustering(A, j, k, steps=50, NUM_INIT_FOR_EM=10, verbose=True):
     flats, j_s, partition = getJOpt(
         A, j, k, steps=steps, NUM_INIT_FOR_EM=NUM_INIT_FOR_EM, verbose=verbose
     )
@@ -250,7 +269,7 @@ def raw_j_opt_for_clustering(A, j, k, steps=300, NUM_INIT_FOR_EM=10, verbose=Tru
         listV.append(V_z)
     return partition, listU, listV, idx_list
 
-def calc_j_opt_error(A, j, k, steps=300, NUM_INIT_FOR_EM=10, verbose=True):
+def calc_j_opt_error(A, j, k, steps=50, NUM_INIT_FOR_EM=10, verbose=True):
     flats, j_s, partition = getJOpt(
         A, j, k, steps=steps, NUM_INIT_FOR_EM=NUM_INIT_FOR_EM, verbose=verbose
     )
@@ -287,7 +306,7 @@ def base_messi_error(A, j, k, partition, order):
     return error
 
 
-def raw_messi(A, j, k, steps=300, NUM_INIT_FOR_EM=10, verbose=True):
+def raw_messi(A, j, k, steps=50, NUM_INIT_FOR_EM=10, verbose=True):
     # returns (k, j, d) tensor to represent the k flats
     # by j basis vectors in R^d
     flats = getProjectiveClustering(
@@ -310,8 +329,31 @@ def raw_messi(A, j, k, steps=300, NUM_INIT_FOR_EM=10, verbose=True):
 
     return partition, listU, listV
 
+def raw_messi_given_init(A, j, k, partition, steps=50, verbose=True):
+    # returns (k, j, d) tensor to represent the k flats
+    # by j basis vectors in R^d
+    flats = getProjectiveClusteringGivenInit(
+        A, j, k, partition, steps=steps, verbose=verbose
+    )
 
-def raw_best_pick(A, j, k, steps=300, NUM_INIT_FOR_EM=10, verbose=True):
+    # partition[i] == z means row i of A belongs to flat z
+    # where 0 <= i < n and 0 <= z < k
+    partition = list(_partitionToClosestFlat_new(A, flats))
+
+    listU = []
+    listV = []
+    n = A.shape[0]
+    for z in range(k):
+        indices_z = [row for row in range(n) if partition[row] == z]
+        A_z = A[indices_z, :]
+        U_z, V_z = lowRank(A_z, j)
+        listU.append(U_z)
+        listV.append(V_z)
+
+    return partition, listU, listV
+
+
+def raw_best_pick(A, j, k, steps=50, NUM_INIT_FOR_EM=10, verbose=True):
     # First run JOPT
     partition_j, listU_j, listV_j = raw_j_opt(
         A, j, k, steps=steps, NUM_INIT_FOR_EM=NUM_INIT_FOR_EM, verbose=verbose
