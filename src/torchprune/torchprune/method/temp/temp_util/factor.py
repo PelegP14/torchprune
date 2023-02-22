@@ -1,12 +1,14 @@
 import numpy as np
+import torch
+
 from .testEM2 import computeCost, computeDistanceToSubspace, EMLikeAlg, EMLikeAlgWithJOpt, computeSuboptimalSubspace, EMLikeAlgGivenInit
 
 
 def getProjectiveClustering(
-        P, j, k, verbose=True, steps=50, NUM_INIT_FOR_EM=10
+        P:torch.Tensor, j, k, verbose=True, steps=50, NUM_INIT_FOR_EM=10
 ):
     n = P.shape[0]
-    w = np.ones(n)  # unit weights
+    w = torch.ones(n,device=P.device)  # unit weights
     # steps = 15 # number of EM steps
 
     if not verbose:
@@ -26,7 +28,7 @@ def getProjectiveClusteringGivenInit(
         P, j, k, partition, verbose=True, steps=50
 ):
     n = P.shape[0]
-    w = np.ones(n)  # unit weights
+    w = torch.ones(n,device=P.device)  # unit weights
     # steps = 15 # number of EM steps
 
     if not verbose:
@@ -88,7 +90,7 @@ def getJOpt(
         P, j, k, verbose=True, steps=50, NUM_INIT_FOR_EM=10
 ):
     n = P.shape[0]
-    w = np.ones(n)  # unit weights
+    w = torch.ones(n, device=P.device)  # unit weights
     # steps = 15 # number of EM steps
 
     if not verbose:
@@ -107,20 +109,20 @@ def getJOpt(
 
 def getCost(P, flats):
     n = P.shape[0]
-    w = np.ones(n)  # unit weights
+    w = torch.ones(n,device=P.device)  # unit weights
 
     cost = computeCost(P, w, flats)[0]
     return cost
 
 
 def _partitionToClosestFlat_new(A, flats):
-    dists = np.empty((A.shape[0], flats.shape[0]))
+    dists = torch.empty((A.shape[0], flats.shape[0]),device=A.device)
     for l in range(flats.shape[0]):
-        _, dists[:, l] = computeCost(A, np.ones(A.shape[0]), flats[l, :, :])
+        _, dists[:, l] = computeCost(A, torch.ones(A.shape[0],device=A.device), flats[l, :, :])
 
-    cluster_indices = np.argmin(
+    cluster_indices = torch.argmin(
         dists, 1
-    )  # determine for each point, the closest flat to it
+    ).long()  # determine for each point, the closest flat to it
     return cluster_indices
 
 
@@ -146,10 +148,10 @@ def get_singular_values(A_list):
 
 
 def can_improve_max(singular_array, j_list):
-    current_sv = np.array([singular_array[i, j_list[i]] for i in range(len(j_list))])
-    lower_sv = np.array([singular_array[i, j_list[i] - 1] if j_list[i] > 0 else np.inf for i in range(len(j_list))])
-    idx_to_increase = np.argmax(current_sv)
-    idx_to_decrease = np.argmin(lower_sv)
+    current_sv = torch.tensor([singular_array[i, j_list[i]] for i in range(len(j_list))],device=singular_array.device)
+    lower_sv = torch.tensor([singular_array[i, j_list[i] - 1] if j_list[i] > 0 else np.inf for i in range(len(j_list))],device=singular_array.device)
+    idx_to_increase = torch.argmax(current_sv)
+    idx_to_decrease = torch.argmin(lower_sv)
     return idx_to_increase, idx_to_decrease, current_sv[idx_to_increase] > lower_sv[idx_to_decrease]
 
 
@@ -204,13 +206,13 @@ def raw_messi_base(A, j, k, can_improve_func, steps=50, NUM_INIT_FOR_EM=10, verb
 
     # partition[i] == z means row i of A belongs to flat z
     # where 0 <= i < n and 0 <= z < k
-    partition = list(_partitionToClosestFlat_new(A, flats))
+    partition = _partitionToClosestFlat_new(A, flats).tolist()
 
     n = A.shape[0]
     idx_list = [[row for row in range(n) if partition[row] == z] for z in range(k)]
     A_list = [A[idx, :] for idx in idx_list]
-    size_per_cluster = np.array([len(idx_list[i]) for i in range(k)])
-    j_list = np.zeros((k,), dtype=np.int)
+    size_per_cluster = torch.tensor([len(idx_list[i]) for i in range(k)],device=A.device,dtype=torch.long)
+    j_list = torch.zeros((k,), dtype=torch.long,device=A.device)
     for size in set(size_per_cluster):
         if size < j:
             continue
@@ -306,7 +308,7 @@ def base_messi_error(A, j, k, partition, order):
     return error
 
 
-def raw_messi(A, j, k, steps=50, NUM_INIT_FOR_EM=10, verbose=True):
+def raw_messi(A: torch.Tensor, j, k, steps=50, NUM_INIT_FOR_EM=10, verbose=True):
     # returns (k, j, d) tensor to represent the k flats
     # by j basis vectors in R^d
     flats = getProjectiveClustering(
@@ -315,7 +317,7 @@ def raw_messi(A, j, k, steps=50, NUM_INIT_FOR_EM=10, verbose=True):
 
     # partition[i] == z means row i of A belongs to flat z
     # where 0 <= i < n and 0 <= z < k
-    partition = list(_partitionToClosestFlat_new(A, flats))
+    partition = _partitionToClosestFlat_new(A, flats).tolist()
 
     listU = []
     listV = []
@@ -338,7 +340,7 @@ def raw_messi_given_init(A, j, k, partition, steps=50, verbose=True):
 
     # partition[i] == z means row i of A belongs to flat z
     # where 0 <= i < n and 0 <= z < k
-    partition = list(_partitionToClosestFlat_new(A, flats))
+    partition = _partitionToClosestFlat_new(A, flats).tolist()
 
     listU = []
     listV = []
@@ -453,21 +455,22 @@ is by truncating the SVD of M.
 
 def lowRank(M, r):
     if M.shape[0] < r:
-        full_M = np.zeros((r, M.shape[1]))
+        full_M = torch.zeros((r, M.shape[1]),device=M.device)
         full_M[:M.shape[0], :] = M
         M = full_M
-    U, D, Vt = np.linalg.svd(M)
+    U, D, Vt = torch.svd(M)
+    Vt = Vt.t()
 
     # truncate to:
     #   left-most r columns of U
     #   first r values of D
     #   top-most r rows of Vt
     U_trunc = U[:, :r]
-    D_trunc = np.diag(D[:r])  # also convert from vector to matrix
+    D_trunc = torch.diag(D[:r])  # also convert from vector to matrix
     Vt_trunc = Vt[:r, :]
 
     # arbitrary choice to combine D with either side
-    return U_trunc.dot(D_trunc), Vt_trunc
+    return U_trunc.matmul(D_trunc), Vt_trunc
 
 
 """
@@ -513,7 +516,7 @@ def _stitchU(partition, listU):
     for U_z in listU:
         r += U_z.shape[1]
 
-    U = np.zeros((n, r))  # final U is mostly zeros
+    U = torch.zeros((n, r),device=listU[0].device)  # final U is mostly zeros
 
     # counter[z] stores current row of listU[z]
     counters = [0] * len(listU)#length k
@@ -547,7 +550,7 @@ into one large jk x d matrix.
 
 
 def _stitchV(listV):
-    return np.concatenate(listV)
+    return torch.cat(listV)
 
 
 def main():

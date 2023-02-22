@@ -29,11 +29,10 @@ class TempSparsifier(GroupedDecomposeSparsifier):
         #  1. y = A^t * x
         #  2. A = UV
         #  3. y = V^T * (U^T * x)
-        partition, list_u, list_v = factor.raw_alds_base(
-            scheme.fold(tensor.detach()).t().cpu().numpy(),
+        partition, list_u, list_v = factor.raw_messi(
+            scheme.fold(tensor.detach()).t(),
             j=rank_j,
-            k=k_split,
-            can_improve_func = self.can_improve_func
+            k=k_split
         )
         u_stitched, v_stitched = factor.stitch(partition, list_u, list_v)
 
@@ -44,8 +43,8 @@ class TempSparsifier(GroupedDecomposeSparsifier):
         # weights_hat = [U, V]
         return [
             (
-                torch.tensor(v_stitched.T).float().to(tensor.device),
-                torch.tensor(u_stitched.T).float().to(tensor.device),
+                v_stitched.t(),
+                u_stitched.t(),
             )
         ]
 
@@ -153,7 +152,7 @@ class TempJOptSparsifier(TempSparsifier):
         #  2. A = UV
         #  3. y = V^T * (U^T * x)
         partition, list_u, list_v = factor.raw_j_opt(
-            scheme.fold(tensor.detach()).t().cpu().numpy(),
+            scheme.fold(tensor.detach()).t(),
             j=rank_j,
             k=k_split,
             steps=self._em_steps,
@@ -168,8 +167,8 @@ class TempJOptSparsifier(TempSparsifier):
         # weights_hat = [U, V]
         return [
             (
-                torch.tensor(v_stitched.T).float().to(tensor.device),
-                torch.tensor(u_stitched.T).float().to(tensor.device),
+                v_stitched.t(),
+                u_stitched.t(),
             )
         ]
 

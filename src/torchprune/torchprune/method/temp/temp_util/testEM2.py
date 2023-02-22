@@ -1,5 +1,6 @@
 import numpy as np
-from scipy.linalg import null_space
+import torch
+#from scipy.linalg import null_space
 from sklearn.utils.extmath import cartesian
 from ortools.graph.python.min_cost_flow import SimpleMinCostFlow
 import copy
@@ -12,27 +13,37 @@ Z = 2
 # NUM_INIT_FOR_EM = 1
 STEPS = 20
 M_ESTIMATOR_FUNCS = {
-    "lp": (lambda x: np.abs(x) ** Z / Z),
+    "lp": (lambda x: torch.abs(x) ** Z / Z),
     "huber": (
         lambda x: x ** 2 / 2
-        if np.abs(x) <= LAMBDA
-        else LAMBDA * (np.abs(x) - LAMBDA / 2)
+        if torch.abs(x) <= LAMBDA
+        else LAMBDA * (torch.abs(x) - LAMBDA / 2)
     ),
-    "cauchy": (lambda x: LAMBDA ** 2 / 2 * np.log(1 + x ** 2 / LAMBDA ** 2)),
+    "cauchy": (lambda x: LAMBDA ** 2 / 2 * torch.log(1 + x ** 2 / LAMBDA ** 2)),
     "geman_McClure": (lambda x: x ** 2 / (2 * (1 + x ** 2))),
     "welsch": (
-        lambda x: LAMBDA ** 2 / 2 * (1 - np.exp(-(x ** 2) / LAMBDA ** 2))
+        lambda x: LAMBDA ** 2 / 2 * (1 - torch.exp(-(x ** 2) / LAMBDA ** 2))
     ),
     "tukey": (
         lambda x: LAMBDA ** 2 / 6 * (1 - (1 - x ** 2 / LAMBDA ** 2) ** 3)
-        if np.abs(x) <= LAMBDA
+        if torch.abs(x) <= LAMBDA
         else LAMBDA ** 2 / 6
     ),
 }
 global OBJECTIVE_LOSS
 OBJECTIVE_LOSS = M_ESTIMATOR_FUNCS["lp"]
 
+def null_space(A, rcond=None):
 
+    u, s, vh = torch.Tensor.svd(A, some=False,compute_uv=True)
+    vh=vh.T
+    M, N = u.shape[0], vh.shape[1]
+    if rcond is None:
+        rcond = torch.finfo(s.dtype).eps * max(M, N)
+    tol = torch.max(s) * rcond
+    num= torch.sum(s > tol, dtype=int)
+    nullspace = vh[num:,:].T.conj()
+    return nullspace
 def computeDistanceToSubspace(point, X):
     """
     This function is responsible for computing the distance between a point and a J dimensional affine subspace.
@@ -43,8 +54,8 @@ def computeDistanceToSubspace(point, X):
     :return: The distance between the point and the subspace which is spanned by X and translated from the origin by v.
     """
     if point.ndim > 1:
-        return np.linalg.norm(np.dot(point, null_space(X)), ord=2, axis=1)
-    return np.linalg.norm(np.dot(point, null_space(X)))
+        return torch.linalg.norm(torch.matmul(point, null_space(X)), ord=2, dim=1)
+    return torch.linalg.norm(torch.matmul(point, null_space(X)))
 
 
 def computeDistanceToSubspaceviaNullSpace(point, null_space):
@@ -57,11 +68,11 @@ def computeDistanceToSubspaceviaNullSpace(point, null_space):
     :return: The distance between the point and the subspace which is spanned by X and translated from the origin by v.
     """
     if point.ndim > 1:
-        return np.linalg.norm(np.dot(point, null_space), ord=2, axis=1)
-    return np.linalg.norm(np.dot(point, null_space))
+        return torch.linalg.norm(torch.matmul(point, null_space), ord=2, dim=1)
+    return torch.linalg.norm(torch.matmul(point, null_space))
 
 
-def computeCost(P, w, X, show_indices=False):
+def computeCost(P:torch.Tensor, w:torch.Tensor, X:torch.Tensor, show_indices=False):
     """
     This function represents our cost function which is a generalization of k-means where the means are now J-flats.
 
@@ -77,11 +88,11 @@ def computeCost(P, w, X, show_indices=False):
         dist_per_point = OBJECTIVE_LOSS(
             computeDistanceToSubspaceviaNullSpace(P, null_space(X))
         )
-        cost_per_point = np.multiply(w, dist_per_point)
+        cost_per_point = torch.multiply(w, dist_per_point)
     else:
-        temp_cost_per_point = np.empty((P.shape[0], X.shape[0]))
+        temp_cost_per_point = torch.empty((P.shape[0], X.shape[0]),device=P.device)
         for i in range(X.shape[0]):
-            temp_cost_per_point[:, i] = np.multiply(
+            temp_cost_per_point[:, i] = torch.multiply(
                 w,
                 OBJECTIVE_LOSS(
                     computeDistanceToSubspaceviaNullSpace(
@@ -90,15 +101,16 @@ def computeCost(P, w, X, show_indices=False):
                 ),
             )
 
-        cost_per_point = np.min(temp_cost_per_point, 1)
-        indices = np.argmin(temp_cost_per_point, 1)
+        torch_min = torch.min(temp_cost_per_point, dim=1)
+        cost_per_point = torch_min.values
+        indices = torch_min.indices
     if not show_indices:
-        return np.sum(cost_per_point), cost_per_point
+        return torch.sum(cost_per_point), cost_per_point
     else:
-        return np.sum(cost_per_point), cost_per_point, indices
+        return torch.sum(cost_per_point), cost_per_point, indices
 
 
-def computeSuboptimalSubspace(P, w, J, padding=0):
+def computeSuboptimalSubspace(P: torch.Tensor, w, J, padding=0):
     """
     This function computes a suboptimal subspace in case of having the generalized K-means objective function.
 
@@ -108,18 +120,19 @@ def computeSuboptimalSubspace(P, w, J, padding=0):
 
     start_time = time.time()
 
-    _, _, V = np.linalg.svd(
-        P, full_matrices=True
+    _, _, V = torch.svd(
+        P, some=False
     )  # computing the spanning subspace
+    V = V.t() # used to be Vh because the numpy implementation was used, torch.svd returns V
     if padding == 0:
         return V[:J, :], time.time() - start_time
-    ret_mat = np.zeros((padding, P.shape[1]))
+    ret_mat = torch.zeros((padding, P.shape[1]),device=P.device)
     if J!=0:
         ret_mat[:J, :] = V[:J, :]
     return ret_mat, time.time() - start_time
 
 
-def EMLikeAlg(P, w, j, k, steps, NUM_INIT_FOR_EM=10):
+def EMLikeAlg(P:torch.Tensor, w:torch.Tensor, j, k, steps, NUM_INIT_FOR_EM=10):
     """
     The function at hand, is an EM-like algorithm which is heuristic in nature. It finds a suboptimal solution for the
     (K,J)-projective clustering problem with respect to a user chosen
@@ -142,12 +155,12 @@ def EMLikeAlg(P, w, j, k, steps, NUM_INIT_FOR_EM=10):
     optimal_cost = np.inf
     # print ("started")
     for iter in range(-1, 2 * NUM_INIT_FOR_EM):  # run EM for 10 random initializations
-        Vs = np.empty((k, max(j,1), d))
-        idxs = np.arange(n)
+        Vs = torch.empty((k, max(j,1), d),device=P.device)
+        idxs = torch.arange(n,dtype=torch.long,device=P.device)
         if iter < NUM_INIT_FOR_EM:
             if iter > -1:
-                np.random.shuffle(idxs)
-            idxs = np.array_split(idxs, k)  # ;print(idxs)
+                idxs = torch.randperm(n,dtype=torch.long,device=P.device)
+            idxs = torch.chunk(idxs, k)  # ;print(idxs)
         else:
             split_idxs = [0]
             for kidx in range(k - 1):
@@ -170,16 +183,16 @@ def EMLikeAlg(P, w, j, k, steps, NUM_INIT_FOR_EM=10):
         while improved and count<steps:
             # find best k j-flats which can attain local optimum
             count += 1
-            dists = np.empty(
-                (n, k)
+            dists = torch.empty(
+                (n, k),device=P.device
             )  # distance of point to each one of the k j-flats
             for l in range(k):
                 _, dists[:, l] = computeCost(P, w, Vs[l, :, :])
 
-            cluster_indices = np.argmin(
+            cluster_indices = torch.argmin(
                 dists, 1
-            )  # determine for each point, the closest flat to it
-            unique_idxs = np.unique(
+            ).long()  # determine for each point, the closest flat to it
+            unique_idxs = torch.unique(
                 cluster_indices
             )  # attain the number of clusters
 
@@ -189,8 +202,8 @@ def EMLikeAlg(P, w, j, k, steps, NUM_INIT_FOR_EM=10):
                     unique_idxs
             ):  # recompute better flats with respect to the updated cluster matching
                 Vs[idx, :, :], _ = computeSuboptimalSubspace(
-                    P[np.where(cluster_indices == idx)[0], :],
-                    w[np.where(cluster_indices == idx)[0]],
+                    P[torch.where(cluster_indices == idx)[0], :],
+                    w[torch.where(cluster_indices == idx)[0]],
                     j,
                     padding=Vs.shape[1]
                 )
@@ -236,12 +249,12 @@ def EMLikeAlgGivenInit(P, w, j, k, partition, steps):
     optimal_cost = np.inf
     # print ("started")
     for iter in range(-1, 1):  # run EM for 10 random initializations
-        Vs = np.empty((k, max(j,1), d))
-        idxs = np.arange(n)
+        Vs = torch.empty((k, max(j,1), d),device=P.device)
+        idxs = torch.arange(n,dtype=torch.long)
         if iter == -1:
-            idxs = np.array_split(idxs, k)  # ;print(idxs)
+            idxs = torch.chunk(idxs, k)  # ;print(idxs)
         else:
-            idxs = [np.where(np.array(partition) == i)[0] for i in range(k)]
+            idxs = [torch.where(torch.tensor(partition,dtype=torch.long,device=P.device) == i)[0] for i in range(k)]
         for i in range(k):  # initialize k random orthogonal matrices
             Vs[i, :, :], _ = computeSuboptimalSubspace(
                 P[idxs[i], :], w[idxs[i]], j, padding=Vs.shape[1]
@@ -253,16 +266,16 @@ def EMLikeAlgGivenInit(P, w, j, k, partition, steps):
         while improved and count<steps:
             # find best k j-flats which can attain local optimum
             count += 1
-            dists = np.empty(
-                (n, k)
+            dists = torch.empty(
+                (n, k),device=P.device
             )  # distance of point to each one of the k j-flats
             for l in range(k):
                 _, dists[:, l] = computeCost(P, w, Vs[l, :, :])
 
-            cluster_indices = np.argmin(
+            cluster_indices = torch.argmin(
                 dists, 1
-            )  # determine for each point, the closest flat to it
-            unique_idxs = np.unique(
+            ).long()  # determine for each point, the closest flat to it
+            unique_idxs = torch.unique(
                 cluster_indices
             )  # attain the number of clusters
 
@@ -272,8 +285,8 @@ def EMLikeAlgGivenInit(P, w, j, k, partition, steps):
                     unique_idxs
             ):  # recompute better flats with respect to the updated cluster matching
                 Vs[idx, :, :], _ = computeSuboptimalSubspace(
-                    P[np.where(cluster_indices == idx)[0], :],
-                    w[np.where(cluster_indices == idx)[0]],
+                    P[torch.where(cluster_indices == idx)[0], :],
+                    w[torch.where(cluster_indices == idx)[0]],
                     j,
                     padding=Vs.shape[1]
                 )
@@ -323,23 +336,19 @@ def EMLikeAlgWithJOpt(P, w, j, k, steps, NUM_INIT_FOR_EM=10):
     optimal_cost = np.inf
     # print ("started")
     for iter in range(-1, 2*NUM_INIT_FOR_EM):  # run EM for 10 random initializations
-        Vs = np.zeros((k, max_rank, d))
-        idxs = np.arange(n)
+        Vs = torch.zeros((k, max_rank, d),device=P.device)
+        idxs = torch.arange(n,device=P.device,dtype=torch.long)
         if iter > -1:
-            np.random.shuffle(idxs)
-        idxs = np.array_split(idxs, k)  # ;print(idxs)
-        last_error = 0
+            torch.randperm(n,device=P.device,dtype=torch.long)
+        idxs = torch.chunk(idxs, k)  # ;print(idxs)
         for i in range(k):  # initialize k random orthogonal matrices
             Vs[i, :, :], _ = computeSuboptimalSubspace(
                 P[idxs[i], :], w[idxs[i]], j, padding=max_rank
             )
-            last_error += computeCost(
-                P[idxs[i], :],
-                w[idxs[i]],
-                Vs[i]
-            )[0]
-        cluster_indices = np.repeat(range(k),n//k)
-        j_s = np.ones((k,),dtype=int) * j
+
+        last_error = computeCost(P, w, Vs)[0]
+        cluster_indices = torch.repeat_interleave(torch.arange(k),n//k).long().to(P.device)
+        j_s = torch.ones((k,),dtype=torch.long,device=P.device) * j
         # for i in range(
         #         steps
         # ):
@@ -354,26 +363,21 @@ def EMLikeAlgWithJOpt(P, w, j, k, steps, NUM_INIT_FOR_EM=10):
             P_list = [P[idx, :] for idx in idx_list]
             j_s = update_j_s(j_s, P_list, can_improve_max)
 
-            unique_idxs = np.unique(
+            unique_idxs = torch.unique(
                 cluster_indices
             )  # attain the number of clusters
-            current_cost = 0
             for (
                     idx
             ) in (
                     unique_idxs
             ):  # recompute better flats with respect to the updated cluster matching
                 Vs[idx, :, :], _ = computeSuboptimalSubspace(
-                    P[np.where(cluster_indices == idx)[0], :],
-                    w[np.where(cluster_indices == idx)[0]],
+                    P[torch.where(cluster_indices == idx)[0], :],
+                    w[torch.where(cluster_indices == idx)[0]],
                     j_s[idx],
                     padding=max_rank
                 )
-                current_cost += computeCost(
-                    P[np.where(cluster_indices == idx)[0], :],
-                    w[np.where(cluster_indices == idx)[0]],
-                    Vs[idx]
-                )[0]
+            current_cost = computeCost(P, w, Vs)[0]
             if current_cost < last_error:
                 last_error = current_cost
             else:
@@ -397,14 +401,15 @@ def find_constrained_clusters(P, Vs, j_s, w):
     n = P.shape[0]
     k = j_s.shape[0]
     min_cluster_size = n // k
-    dists = np.empty(
-        (n, k)
+    dists = torch.empty(
+        (n, k),device=P.device
     )  # distance of point to each one of the k j-flats
     for l in range(k):
         _, dists[:, l] = computeCost(P, w, Vs[l, :, :])
 
-    edges, costs, capacities, supplies = create_graph(P, Vs, dists, min_cluster_size)
+    edges, costs, capacities, supplies = create_graph(P.cpu().numpy(), Vs.cpu().numpy(), dists.cpu().numpy(), min_cluster_size)
     cluster_indicies = solve_min_cost_flow(edges, costs, capacities, supplies, n, k)
+    cluster_indicies = torch.tensor(cluster_indicies,device=P.device,dtype=torch.long)
 
     return cluster_indicies
 
@@ -478,17 +483,17 @@ def update_j_s(j_s, A_list, can_improve):
 def get_singular_values(A_list):
     k = len(A_list)
     max_j = min(A_list[0].shape[0], A_list[0].shape[1])
-    singular_array = np.zeros((k, max_j + 1))
+    singular_array = torch.zeros((k, max_j + 1),device=A_list[0].device)
     for i, A_i in enumerate(A_list):
-        singular_array[i, :max_j] = np.linalg.svd(A_i, compute_uv=False)
+        singular_array[i, :max_j] = torch.svd(A_i, compute_uv=False)
     return singular_array
 
 
 def can_improve_max(singular_array, j_list):
-    current_sv = np.array([singular_array[i, j_list[i]] for i in range(len(j_list))])
-    lower_sv = np.array([singular_array[i, j_list[i] - 1] if j_list[i] > 0 else np.inf for i in range(len(j_list))])
-    idx_to_increase = np.argmax(current_sv)
-    idx_to_decrease = np.argmin(lower_sv)
+    current_sv = torch.tensor([singular_array[i, j_list[i]] for i in range(len(j_list))],device=singular_array.device)
+    lower_sv = torch.tensor([singular_array[i, j_list[i] - 1] if j_list[i] > 0 else np.inf for i in range(len(j_list))],device=singular_array.device)
+    idx_to_increase = torch.argmax(current_sv)
+    idx_to_decrease = torch.argmin(lower_sv)
     return idx_to_increase, idx_to_decrease, current_sv[idx_to_increase] > lower_sv[idx_to_decrease]
 
 """

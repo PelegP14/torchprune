@@ -34,9 +34,9 @@ class TempErrorAllocator(BaseDecomposeAllocator):
         # compute relative error for each layer
         rel_errors = [
             self._compute_rel_error_for_weight(weight, k_s, scheme)
-            for weight, k_s, scheme in zip(
+            for weight, k_s, scheme in tqdm(zip(
                 self.weights, self._k_splits, self._schemes
-            )
+            ), desc="layers")
         ]
 
         # pre-allocate big tensor
@@ -67,7 +67,7 @@ class TempErrorAllocator(BaseDecomposeAllocator):
         device = weight.device
         op_norm = self._compute_norm_for_weight(weight, scheme, ord=self._norm_ord)
 
-        weight = scheme.fold(weight.detach()).t().cpu().numpy()
+        weight = scheme.fold(weight.detach()).t()
 
         # get k_split as int instead of tensor
         k_split = k_split.item()
@@ -89,7 +89,7 @@ class TempErrorAllocator(BaseDecomposeAllocator):
 
             diff = new_weight - weight
 
-            rel_error.append(np.linalg.norm(diff, ord=self._norm_ord))
+            rel_error.append(torch.linalg.norm(diff, ord=self._norm_ord).item())
 
         # # compute flats and errors
         # rel_error = []
@@ -262,7 +262,7 @@ class TempErrorIterativeAllocator(TempErrorAllocator):
 
     def _update_rel_error(self):
         """Update self._rel_error by using look-up if possible."""
-        for ell, k_split in tqdm(enumerate(self._k_splits)):
+        for ell, k_split in tqdm(enumerate(self._k_splits),desc="layers"):
             lookup = self._lookup_rel_error(ell, k_split, self._scheme(ell))
             self._rel_error[ell].copy_(lookup)
 
@@ -656,7 +656,7 @@ class TempErrorIterativeAllocatorJOPT(TempErrorIterativeAllocator):
         device = weight.device
         op_norm = self._compute_norm_for_weight(weight, scheme, ord=self._norm_ord)
 
-        weight = scheme.fold(weight.detach()).t().cpu().numpy()
+        weight = scheme.fold(weight.detach()).t()
 
         # get k_split as int instead of tensor
         k_split = k_split.item()
@@ -685,7 +685,7 @@ class TempErrorIterativeAllocatorJOPT(TempErrorIterativeAllocator):
 
             diff = new_weight - weight
 
-            rel_error.append(np.linalg.norm(diff, ord=self._norm_ord))
+            rel_error.append(torch.linalg.norm(diff, ord=self._norm_ord).item())
 
 
         # # compute flats and errors
@@ -831,7 +831,7 @@ class TempErrorPracticalSpeedUpPC(TempErrorIterativeAllocator):
         device = weight.device
         op_norm = self._compute_norm_for_weight(weight, scheme, ord=self._norm_ord)
 
-        weight = scheme.fold(weight.detach()).t().cpu().numpy()
+        weight = scheme.fold(weight.detach()).t()
 
         # get k_split as int instead of tensor
         k_split = k_split.item()
@@ -843,7 +843,7 @@ class TempErrorPracticalSpeedUpPC(TempErrorIterativeAllocator):
         j_options = np.linspace(1,rank_k-1,self._max_j_calcs).astype(int)
         j_options = np.concatenate(([0],j_options))
         j_options = np.unique(j_options)
-        for j in tqdm(j_options):
+        for j in tqdm(j_options,desc=f"layer of size n={weight.shape[0]}, d={weight.shape[1]}, k={k_split}",leave=False):
             partition, list_u, list_v = factor.raw_messi(
                 weight,
                 j=j,
@@ -856,7 +856,7 @@ class TempErrorPracticalSpeedUpPC(TempErrorIterativeAllocator):
 
             diff = new_weight - weight
 
-            rel_error.append(np.linalg.norm(diff, ord=self._norm_ord))
+            rel_error.append(torch.linalg.norm(diff, ord=self._norm_ord).item())
 
         full_rel_error = np.interp(np.arange(rank_k),j_options,rel_error)
 
@@ -874,7 +874,7 @@ class TempErrorPracticalSpeedUpJOPT(TempErrorIterativeAllocator):
         device = weight.device
         op_norm = self._compute_norm_for_weight(weight, scheme, ord=self._norm_ord)
 
-        weight = scheme.fold(weight.detach()).t().cpu().numpy()
+        weight = scheme.fold(weight.detach()).t()
 
         # get k_split as int instead of tensor
         k_split = k_split.item()
@@ -886,7 +886,7 @@ class TempErrorPracticalSpeedUpJOPT(TempErrorIterativeAllocator):
         j_options = np.linspace(1,rank_k-1,self._max_j_calcs).astype(int)
         j_options = np.concatenate(([0],j_options))
         j_options = np.unique(j_options)
-        for j in j_options:
+        for j in tqdm(j_options,desc=f"layer of size n={weight.shape[0]}, d={weight.shape[1]}, k={k_split}",leave=False):
             partition, list_u, list_v = factor.raw_j_opt(
                 weight,
                 j=j,
@@ -899,7 +899,7 @@ class TempErrorPracticalSpeedUpJOPT(TempErrorIterativeAllocator):
 
             diff = new_weight - weight
 
-            rel_error.append(np.linalg.norm(diff, ord=self._norm_ord))
+            rel_error.append(torch.linalg.norm(diff, ord=self._norm_ord).item())
 
         full_rel_error = np.interp(np.arange(rank_k),j_options,rel_error)
 
