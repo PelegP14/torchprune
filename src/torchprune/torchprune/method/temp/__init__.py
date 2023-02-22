@@ -23,5 +23,8 @@ from .temp_net import (
     TempNetPCEfficient,
     TempNetUniformSamplePC,
     TempNetUniformSampleJOPT,
-    TempNetPracticalSpeedUpPC
+    TempNetPracticalSpeedUpPC,
+    TempNetPracticalSpeedUpJOPT,
+    TempNetRandomPartitionsPC,
+    TempNetRandomPartitionsJOPT
 )

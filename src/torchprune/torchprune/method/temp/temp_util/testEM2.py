@@ -322,7 +322,7 @@ def EMLikeAlgWithJOpt(P, w, j, k, steps, NUM_INIT_FOR_EM=10):
     best_cluster_indices = None
     optimal_cost = np.inf
     # print ("started")
-    for iter in range(-1, NUM_INIT_FOR_EM):  # run EM for 10 random initializations
+    for iter in range(-1, 2*NUM_INIT_FOR_EM):  # run EM for 10 random initializations
         Vs = np.zeros((k, max_rank, d))
         idxs = np.arange(n)
         if iter > -1:

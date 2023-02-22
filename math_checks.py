@@ -1,5 +1,6 @@
 from scipy.spatial.transform import Rotation as R
 import numpy as np
+from tqdm import tqdm
 
 def build_mat(mat_list, shape, partition):
     mat = np.zeros(shape)
@@ -32,6 +33,26 @@ def can_improve_max(singular_array,j_list):
     idx_to_increase = np.argmax(current_sv)
     idx_to_decrease = np.argmin(lower_sv)
     return idx_to_increase, idx_to_decrease, current_sv[idx_to_increase] > lower_sv[idx_to_decrease]
+
+def random_subset(A,k):
+    subset = np.random.choice(np.arange(A.shape[1]),size=A.shape[1]//k,replace=False)
+    A_tag = A[:,subset]
+    return A_tag
+
+def get_stats_for_random_selections(A,k,samples,j):
+    sum1 = 0
+    sum2 = 0
+    min_s = np.inf
+    for i in tqdm(range(samples)):
+        A_tag = random_subset(A,k)
+        sigma = np.linalg.svd(A_tag, compute_uv=False)[j]
+        sum1 += sigma
+        sum2 += sigma**2
+        min_s = np.minimum(min_s,sigma)
+    avg = sum1/samples
+    std = np.sqrt(sum2/samples-avg**2)
+    print(f"stats:\navg:{avg}\nstd:{std}\nmin:{min_s}")
+
 
 k = 2
 num_sing_values = 3

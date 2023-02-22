@@ -8,6 +8,7 @@ from ..base_decompose import BaseDecomposeAllocator, FoldScheme
 from .temp_util import factor
 from .temp_util.linear_programs import greedy_optimization
 from ..base_clustering import BaseClusterAllocator
+from tqdm import tqdm
 MAX_K = 20
 
 class TempErrorAllocator(BaseDecomposeAllocator):
@@ -261,7 +262,7 @@ class TempErrorIterativeAllocator(TempErrorAllocator):
 
     def _update_rel_error(self):
         """Update self._rel_error by using look-up if possible."""
-        for ell, k_split in enumerate(self._k_splits):
+        for ell, k_split in tqdm(enumerate(self._k_splits)):
             lookup = self._lookup_rel_error(ell, k_split, self._scheme(ell))
             self._rel_error[ell].copy_(lookup)
 
@@ -775,7 +776,55 @@ class TempErrorUseCoresetJOPT(TempErrorIterativeAllocatorJOPT):
         indxs = np.random.choice(np.arange(n), size=n//smallest_divisor, replace=False, p=np.ones(n)/n)
         new_weight = weight[:,torch.tensor(indxs,dtype=torch.long)]
         return new_weight
-class TempErrorPracticalSpeedUp(TempErrorIterativeAllocator):
+
+class TempErrorRandomPartitionsPC(TempErrorIterativeAllocator):
+    def _compute_rel_error_for_weight(self, weight, k_split, scheme):
+        # calculate k,j projective clustering for each of the possible j values and with the given k
+        # fold into matrix operator
+        device = weight.device
+        op_norm = self._compute_norm_for_weight(weight, scheme, ord=self._norm_ord)
+
+        weight = scheme.fold(weight.detach()).t().cpu().numpy()
+
+        # get k_split as int instead of tensor
+        k_split = k_split.item()
+
+        # compute rank (notice the transpose when unfolding)
+        n = weight.shape[0]
+        d = weight.shape[1]
+        rank_k = min(d, n // k_split)
+        rel_error = np.ones(rank_k)*np.inf
+        for i in range(n*d*k_split):
+            indxs = np.random.choice(np.arange(n), size=n // k_split, replace=False, p=np.ones(n) / n)
+            new_weight = weight[indxs]
+            rel_error = np.minimum(rel_error,np.linalg.svd(new_weight,compute_uv=False))
+        rel_error = torch.tensor(rel_error,device=device)
+        return (rel_error/op_norm).to(device)
+
+class TempErrorRandomPartitionsJOPT(TempErrorIterativeAllocatorJOPT):
+    def _compute_rel_error_for_weight(self, weight, k_split, scheme):
+        # calculate k,j projective clustering for each of the possible j values and with the given k
+        # fold into matrix operator
+        device = weight.device
+        op_norm = self._compute_norm_for_weight(weight, scheme, ord=self._norm_ord)
+
+        weight = scheme.fold(weight.detach()).t().cpu().numpy()
+
+        # get k_split as int instead of tensor
+        k_split = k_split.item()
+
+        # compute rank (notice the transpose when unfolding)
+        n = weight.shape[0]
+        d = weight.shape[1]
+        rank_k = min(d, n // k_split)
+        rel_error = np.ones(rank_k)*np.inf
+        for i in range(n*d*k_split):
+            indxs = np.random.choice(np.arange(n), size=n // k_split, replace=False, p=np.ones(n) / n)
+            new_weight = weight[indxs]
+            rel_error = np.minimum(rel_error,np.linalg.svd(new_weight,compute_uv=False))
+        rel_error = torch.tensor(rel_error, device=device)
+        return (rel_error/op_norm).to(device)
+class TempErrorPracticalSpeedUpPC(TempErrorIterativeAllocator):
     def _compute_rel_error_for_weight(self, weight, k_split, scheme):
         # calculate k,j projective clustering for each of the possible j values and with the given k
         # fold into matrix operator
@@ -789,30 +838,17 @@ class TempErrorPracticalSpeedUp(TempErrorIterativeAllocator):
 
         # compute rank (notice the transpose when unfolding)
         rank_k = min(weight.shape[1], weight.shape[0] // k_split)
+
         rel_error = []
-
-        # compute first for high j and use its result as inits for low js
-        partition, list_u, list_v = factor.raw_messi(
-            weight,
-            j=rank_k-1,
-            k=k_split,
-            verbose=True
-        )
-        u_stitched, v_stitched = factor.stitch(partition, list_u, list_v)
-
-        new_weight = u_stitched @ v_stitched
-
-        diff = new_weight - weight
-
-        rel_error.append(np.linalg.norm(diff, ord=self._norm_ord))
-
-        for j in range(rank_k-2,-1,-1):
-            partition, list_u, list_v = factor.raw_messi_given_init(
+        j_options = np.linspace(1,rank_k-1,self._max_j_calcs).astype(int)
+        j_options = np.concatenate(([0],j_options))
+        j_options = np.unique(j_options)
+        for j in tqdm(j_options):
+            partition, list_u, list_v = factor.raw_messi(
                 weight,
                 j=j,
                 k=k_split,
-                partition=partition,
-                verbose=True
+                verbose=False
             )
             u_stitched, v_stitched = factor.stitch(partition, list_u, list_v)
 
@@ -822,15 +858,57 @@ class TempErrorPracticalSpeedUp(TempErrorIterativeAllocator):
 
             rel_error.append(np.linalg.norm(diff, ord=self._norm_ord))
 
-        # # compute flats and errors
-        # rel_error = []
-        # for j in range(0,rank_k):
-        #     flats = factor.getProjectiveClustering(weight, j, k_split,verbose=False)
-        #     rel_error.append(factor.getCost(weight, flats))
+        full_rel_error = np.interp(np.arange(rank_k),j_options,rel_error)
 
-        rel_error = torch.tensor(rel_error, device=device) / (op_norm * np.sqrt(k_split))
+        rel_error = torch.tensor(full_rel_error, device=device) / (op_norm * np.sqrt(k_split))
         return rel_error
 
+    @property
+    def _max_j_calcs(self):
+        return 16
+
+class TempErrorPracticalSpeedUpJOPT(TempErrorIterativeAllocator):
+    def _compute_rel_error_for_weight(self, weight, k_split, scheme):
+        # calculate k,j projective clustering for each of the possible j values and with the given k
+        # fold into matrix operator
+        device = weight.device
+        op_norm = self._compute_norm_for_weight(weight, scheme, ord=self._norm_ord)
+
+        weight = scheme.fold(weight.detach()).t().cpu().numpy()
+
+        # get k_split as int instead of tensor
+        k_split = k_split.item()
+
+        # compute rank (notice the transpose when unfolding)
+        rank_k = min(weight.shape[1], weight.shape[0] // k_split)
+
+        rel_error = []
+        j_options = np.linspace(1,rank_k-1,self._max_j_calcs).astype(int)
+        j_options = np.concatenate(([0],j_options))
+        j_options = np.unique(j_options)
+        for j in j_options:
+            partition, list_u, list_v = factor.raw_j_opt(
+                weight,
+                j=j,
+                k=k_split,
+                verbose=False
+            )
+            u_stitched, v_stitched = factor.stitch(partition, list_u, list_v)
+
+            new_weight = u_stitched @ v_stitched
+
+            diff = new_weight - weight
+
+            rel_error.append(np.linalg.norm(diff, ord=self._norm_ord))
+
+        full_rel_error = np.interp(np.arange(rank_k),j_options,rel_error)
+
+        rel_error = torch.tensor(full_rel_error, device=device) / (op_norm * np.sqrt(k_split))
+        return rel_error
+
+    @property
+    def _max_j_calcs(self):
+        return 16
 
 ###########################################
 ### TODO: Consider using a non temporary solution
