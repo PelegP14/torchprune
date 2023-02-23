@@ -13,11 +13,13 @@ experiments:
   methods:
     - "ALDSNet"
     - "TempNet"
-    - "TempNetJOPT"
+    - "TempNetJOpt"
     - "TempNetUniformSamplePC"
     - "TempNetUniformSampleJOPT"
-    - "TempNetRandomPartitionsPC"
-    - "TempNetRandomPartitionsJOPT"
+    - "TempNetPracticalSpeedUpPC"
+    - "TempNetPracticalSpeedUpJOPT"
+    - "TempNetPracticalSpeedUpALDSPC"
+    - "TempNetPracticalSpeedUpALDSJOPT"
   mode: "retrain"
 
   numRepetitions: 1

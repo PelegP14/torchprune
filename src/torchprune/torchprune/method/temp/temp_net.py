@@ -28,6 +28,8 @@ from .temp_allocator import (
     TempErrorUseCoresetJOPT,
     TempErrorPracticalSpeedUpPC,
     TempErrorPracticalSpeedUpJOPT,
+    TempErrorPracticalSpeedUpALDSPC,
+    TempErrorPracticalSpeedUpALDSJOPT,
     TempErrorRandomPartitionsPC,
     TempErrorRandomPartitionsJOPT
 )
@@ -54,7 +56,7 @@ class TempNet(BaseDecomposeNet):
     @property
     def _sparsifier_type(self):
         """Get sparsifier type."""
-        return MessiSparsifier
+        return TempSparsifier
 
     @property
     def _k_split(self):
@@ -200,7 +202,7 @@ class TempNetUniformSamplePC(TempNet):
     def _allocator_type(self):
         return TempErrorUseCoresetPC
 
-class TempNetUniformSampleJOPT(TempNet):
+class TempNetUniformSampleJOPT(TempNetJOpt):
     @property
     def _allocator_type(self):
         return TempErrorUseCoresetJOPT
@@ -210,11 +212,23 @@ class TempNetPracticalSpeedUpPC(TempNet):
     def _allocator_type(self):
         return TempErrorPracticalSpeedUpPC
 
-class TempNetPracticalSpeedUpJOPT(TempNet):
+class TempNetPracticalSpeedUpJOPT(TempNetJOpt):
 
     @property
     def _allocator_type(self):
         return TempErrorPracticalSpeedUpJOPT
+
+class TempNetPracticalSpeedUpALDSPC(TempNet):
+
+    @property
+    def _allocator_type(self):
+        return TempErrorPracticalSpeedUpALDSPC
+
+class TempNetPracticalSpeedUpALDSJOPT(TempNetJOpt):
+
+    @property
+    def _allocator_type(self):
+        return TempErrorPracticalSpeedUpALDSJOPT
 
 class TempNetRandomPartitionsPC(TempNet):
     @property

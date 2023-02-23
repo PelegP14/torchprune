@@ -54,8 +54,8 @@ def computeDistanceToSubspace(point, X):
     :return: The distance between the point and the subspace which is spanned by X and translated from the origin by v.
     """
     if point.ndim > 1:
-        return torch.linalg.norm(torch.matmul(point, null_space(X)), ord=2, dim=1)
-    return torch.linalg.norm(torch.matmul(point, null_space(X)))
+        return torch.linalg.norm((point-point@X.t()@X), dim=1)
+    return torch.linalg.norm((point-point@X.t()@X))
 
 
 def computeDistanceToSubspaceviaNullSpace(point, null_space):
@@ -86,7 +86,7 @@ def computeCost(P:torch.Tensor, w:torch.Tensor, X:torch.Tensor, show_indices=Fal
     global OBJECTIVE_LOSS
     if X.ndim == 2:
         dist_per_point = OBJECTIVE_LOSS(
-            computeDistanceToSubspaceviaNullSpace(P, null_space(X))
+            computeDistanceToSubspace(P, X)
         )
         cost_per_point = torch.multiply(w, dist_per_point)
     else:
@@ -95,8 +95,8 @@ def computeCost(P:torch.Tensor, w:torch.Tensor, X:torch.Tensor, show_indices=Fal
             temp_cost_per_point[:, i] = torch.multiply(
                 w,
                 OBJECTIVE_LOSS(
-                    computeDistanceToSubspaceviaNullSpace(
-                        P, null_space(X[i, :, :])
+                    computeDistanceToSubspace(
+                        P, X[i, :, :]
                     )
                 ),
             )
@@ -485,7 +485,7 @@ def get_singular_values(A_list):
     max_j = min(A_list[0].shape[0], A_list[0].shape[1])
     singular_array = torch.zeros((k, max_j + 1),device=A_list[0].device)
     for i, A_i in enumerate(A_list):
-        singular_array[i, :max_j] = torch.svd(A_i, compute_uv=False)
+        singular_array[i, :max_j] = torch.svd(A_i, compute_uv=False)[1]
     return singular_array
 
 

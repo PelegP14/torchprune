@@ -76,7 +76,8 @@ class TempErrorAllocator(BaseDecomposeAllocator):
         rank_k = min(weight.shape[1], weight.shape[0] // k_split)
 
         rel_error = []
-        for j in range(rank_k):
+        for j in tqdm(range(rank_k), desc=f"layer of size n={weight.shape[0]}, d={weight.shape[1]}, k={k_split}",
+                      leave=False):
             partition, list_u, list_v = factor.raw_messi(
                 weight,
                 j=j,
@@ -99,6 +100,26 @@ class TempErrorAllocator(BaseDecomposeAllocator):
 
         rel_error = torch.tensor(rel_error,device=device)/(op_norm * np.sqrt(k_split))
         return rel_error
+
+    @staticmethod
+    def _compute_sv_for_weight(weight, k_split, scheme):
+        """Compute SVD for one layer."""
+        # fold into matrix operator
+        weight = scheme.fold(weight.detach())
+
+        # get k_split as int instead of tensor
+        k_split = k_split.item()
+
+        # compute rank
+        rank_k = min(weight.shape[0], weight.shape[1] // k_split)
+        # pre-allocate singular values ...
+        singular_values = torch.zeros(k_split, rank_k, device=weight.device)
+        # compute singular values for each part of the decomposed weight
+        for idx_k, w_per_g_k in enumerate(torch.chunk(weight, k_split, dim=1)):
+            singular_values[idx_k] = torch.svd(w_per_g_k, compute_uv=False)[1]
+
+        # note has shape [k_split x rank_per_k]
+        return singular_values
 
     def _get_boundaries(self):
         # use min and max relative error ...
@@ -665,7 +686,8 @@ class TempErrorIterativeAllocatorJOPT(TempErrorIterativeAllocator):
         rank_k = min(weight.shape[1], weight.shape[0] // k_split)
 
         rel_error = []
-        for j in range(rank_k):
+        for j in tqdm(range(rank_k), desc=f"layer of size n={weight.shape[0]}, d={weight.shape[1]}, k={k_split}",
+                      leave=False):
             # error = factor.calc_j_opt_error(
             #     weight,
             #     j=j,
@@ -756,26 +778,35 @@ class TempErrorIterativeAllocatorUseBest(TempErrorIterativeAllocator):
 class TempErrorUseCoresetPC(TempErrorIterativeAllocator):
     def get_coreset(self, weight):
         n = weight.shape[1]
-        divisors = np.arange(n, 1, -1)
-        divisors = divisors[np.remainder(n, divisors) == 0]
-        if divisors.shape[0] <= 1:
-            return weight
-        smallest_divisor = divisors[-1]
-        indxs = np.random.choice(np.arange(n), size=n//smallest_divisor, replace=False, p=np.ones(n)/n)
-        new_weight = weight[:,torch.tensor(indxs,dtype=torch.long)]
-        return new_weight
+        new_n = n
+        for i in range(self._factor_order):
+            for j in range(2,new_n):
+                if new_n % j == 0:
+                    new_n = new_n // j
+                    break
 
+        indxs = np.random.choice(np.arange(n), size=new_n, replace=False, p=np.ones(n) / n)
+        new_weight = weight[:, torch.tensor(indxs, dtype=torch.long)]
+        return new_weight
+    @property
+    def _factor_order(self):
+        return 2
 class TempErrorUseCoresetJOPT(TempErrorIterativeAllocatorJOPT):
     def get_coreset(self, weight):
         n = weight.shape[1]
-        divisors = np.arange(n, 1, -1)
-        divisors = divisors[np.remainder(n, divisors) == 0]
-        if divisors.shape[0] <= 1:
-            return weight
-        smallest_divisor = divisors[-1]
-        indxs = np.random.choice(np.arange(n), size=n//smallest_divisor, replace=False, p=np.ones(n)/n)
+        new_n = n
+        for i in range(self._factor_order):
+            for j in range(2,new_n):
+                if new_n%j == 0:
+                    new_n = new_n//j
+                    break
+
+        indxs = np.random.choice(np.arange(n), size=new_n, replace=False, p=np.ones(n)/n)
         new_weight = weight[:,torch.tensor(indxs,dtype=torch.long)]
         return new_weight
+    @property
+    def _factor_order(self):
+        return 2
 
 class TempErrorRandomPartitionsPC(TempErrorIterativeAllocator):
     def _compute_rel_error_for_weight(self, weight, k_split, scheme):
@@ -841,6 +872,7 @@ class TempErrorPracticalSpeedUpPC(TempErrorIterativeAllocator):
 
         rel_error = []
         j_options = np.linspace(1,rank_k-1,self._max_j_calcs).astype(int)
+        j_options = np.minimum(j_options, rank_k - 1)
         j_options = np.concatenate(([0],j_options))
         j_options = np.unique(j_options)
         for j in tqdm(j_options,desc=f"layer of size n={weight.shape[0]}, d={weight.shape[1]}, k={k_split}",leave=False):
@@ -884,6 +916,7 @@ class TempErrorPracticalSpeedUpJOPT(TempErrorIterativeAllocator):
 
         rel_error = []
         j_options = np.linspace(1,rank_k-1,self._max_j_calcs).astype(int)
+        j_options = np.minimum(j_options, rank_k - 1)
         j_options = np.concatenate(([0],j_options))
         j_options = np.unique(j_options)
         for j in tqdm(j_options,desc=f"layer of size n={weight.shape[0]}, d={weight.shape[1]}, k={k_split}",leave=False):
@@ -905,6 +938,100 @@ class TempErrorPracticalSpeedUpJOPT(TempErrorIterativeAllocator):
 
         rel_error = torch.tensor(full_rel_error, device=device) / (op_norm * np.sqrt(k_split))
         return rel_error
+
+    @property
+    def _max_j_calcs(self):
+        return 16
+
+class TempErrorPracticalSpeedUpALDSPC(TempErrorIterativeAllocator):
+    def _compute_rel_error_for_weight(self, weight, k_split, scheme):
+        # calculate k,j projective clustering for each of the possible j values and with the given k
+        # fold into matrix operator
+        device = weight.device
+        singular_values = self._compute_sv_for_weight(weight, k_split, scheme)
+        op_norm = self._compute_norm_for_weight(weight, scheme, ord=self._norm_ord)
+
+        weight = scheme.fold(weight.detach()).t()
+
+        # get k_split as int instead of tensor
+        k_split = k_split.item()
+
+        # compute rank (notice the transpose when unfolding)
+        rank_k = min(weight.shape[1], weight.shape[0] // k_split)
+
+        rel_error = []
+        j_options = np.linspace(1,rank_k-1,self._max_j_calcs).astype(int)
+        j_options = np.minimum(j_options,rank_k-1)
+        j_options = np.concatenate(([0],j_options))
+        j_options = np.unique(j_options)
+        for j in tqdm(j_options,desc=f"layer of size n={weight.shape[0]}, d={weight.shape[1]}, k={k_split}",leave=False):
+            partition, list_u, list_v = factor.raw_messi(
+                weight,
+                j=j,
+                k=k_split,
+                verbose=False
+            )
+            u_stitched, v_stitched = factor.stitch(partition, list_u, list_v)
+
+            new_weight = u_stitched @ v_stitched
+
+            diff = new_weight - weight
+
+            rel_error.append(torch.linalg.norm(diff, ord=self._norm_ord).item())
+
+
+
+        full_rel_error = singular_values.max(dim=0)[0] / op_norm
+        full_rel_error[j_options] = torch.tensor(rel_error, device=device) / (op_norm * np.sqrt(k_split))
+
+        return full_rel_error
+
+    @property
+    def _max_j_calcs(self):
+        return 16
+
+class TempErrorPracticalSpeedUpALDSJOPT(TempErrorIterativeAllocator):
+    def _compute_rel_error_for_weight(self, weight, k_split, scheme):
+        # calculate k,j projective clustering for each of the possible j values and with the given k
+        # fold into matrix operator
+        device = weight.device
+        singular_values = self._compute_sv_for_weight(weight, k_split, scheme)
+        op_norm = self._compute_norm_for_weight(weight, scheme, ord=self._norm_ord)
+
+        weight = scheme.fold(weight.detach()).t()
+
+        # get k_split as int instead of tensor
+        k_split = k_split.item()
+
+        # compute rank (notice the transpose when unfolding)
+        rank_k = min(weight.shape[1], weight.shape[0] // k_split)
+
+        rel_error = []
+        j_options = np.linspace(1,rank_k-1,self._max_j_calcs).astype(int)
+        j_options = np.minimum(j_options, rank_k - 1)
+        j_options = np.concatenate(([0],j_options))
+        j_options = np.unique(j_options)
+        for j in tqdm(j_options,desc=f"layer of size n={weight.shape[0]}, d={weight.shape[1]}, k={k_split}",leave=False):
+            partition, list_u, list_v = factor.raw_j_opt(
+                weight,
+                j=j,
+                k=k_split,
+                verbose=False
+            )
+            u_stitched, v_stitched = factor.stitch(partition, list_u, list_v)
+
+            new_weight = u_stitched @ v_stitched
+
+            diff = new_weight - weight
+
+            rel_error.append(torch.linalg.norm(diff, ord=self._norm_ord).item())
+
+
+
+        full_rel_error = singular_values.max(dim=0)[0]/op_norm
+        full_rel_error[j_options] = torch.tensor(rel_error, device=device)/ (op_norm * np.sqrt(k_split))
+
+        return full_rel_error
 
     @property
     def _max_j_calcs(self):
