@@ -121,9 +121,9 @@ def computeSuboptimalSubspace(P: torch.Tensor, w, J, padding=0):
     start_time = time.time()
 
     _, _, V = torch.svd(
-        P, some=False
+        P.cpu(), some=False
     )  # computing the spanning subspace
-    V = V.t() # used to be Vh because the numpy implementation was used, torch.svd returns V
+    V = V.t().to(P.device) # used to be Vh because the numpy implementation was used, torch.svd returns V
     if padding == 0:
         return V[:J, :], time.time() - start_time
     ret_mat = torch.zeros((padding, P.shape[1]),device=P.device)
@@ -154,10 +154,10 @@ def EMLikeAlg(P:torch.Tensor, w:torch.Tensor, j, k, steps, NUM_INIT_FOR_EM=10):
     min_Vs = None
     optimal_cost = np.inf
     # print ("started")
-    for iter in range(-1, 2 * NUM_INIT_FOR_EM):  # run EM for 10 random initializations
+    for iter in range(-1, NUM_INIT_FOR_EM):  # run EM for 10 random initializations
         Vs = torch.empty((k, max(j,1), d),device=P.device)
         idxs = torch.arange(n,dtype=torch.long,device=P.device)
-        if iter < NUM_INIT_FOR_EM:
+        if iter < NUM_INIT_FOR_EM//2:
             if iter > -1:
                 idxs = torch.randperm(n,dtype=torch.long,device=P.device)
             idxs = torch.chunk(idxs, k)  # ;print(idxs)
@@ -335,7 +335,7 @@ def EMLikeAlgWithJOpt(P, w, j, k, steps, NUM_INIT_FOR_EM=10):
     best_cluster_indices = None
     optimal_cost = np.inf
     # print ("started")
-    for iter in range(-1, 2*NUM_INIT_FOR_EM):  # run EM for 10 random initializations
+    for iter in range(-1, NUM_INIT_FOR_EM):  # run EM for 10 random initializations
         Vs = torch.zeros((k, max_rank, d),device=P.device)
         idxs = torch.arange(n,device=P.device,dtype=torch.long)
         if iter > -1:

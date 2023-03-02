@@ -62,14 +62,14 @@ test_loader = DataLoader(test_set, batch_size=32)
 # testset = torchvision.datasets.CIFAR10(
 #     root="./local",
 #     train=False,
-#     download=True,
+#     download=False,
 #     transform=tp.util.transforms.SmartCompose(transform_static),
 # )
 #
 # trainset = torchvision.datasets.CIFAR10(
 #     root="./local",
 #     train=True,
-#     download=True,
+#     download=False,
 #     transform=tp.util.transforms.SmartCompose(
 #         transform_train + transform_static
 #     ),
@@ -110,7 +110,7 @@ for epoch in range(20):
     scheduler.step()
     print("epoch {}: {:.3f}".format(epoch,success/count))
 
-kr = 0.5
+kr = 0.9
 nets = [tp.TempNet,tp.TempNetPracticalSpeedUpALDSPC,tp.TempNetPracticalSpeedUpPC,tp.TempNetUniformSamplePC,tp.ALDSNet]
 vals = []
 for i,option in enumerate(nets):

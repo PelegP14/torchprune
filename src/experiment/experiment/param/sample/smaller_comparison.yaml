@@ -11,10 +11,8 @@ retraining:
 
 experiments:
   methods:
-    - "TempNetALDSerrorComparison"
-    - "ALDSNet"
-    - "TempNet"
-    - "TempNetFrobenius"
+    - "TempNetPracticalSpeedUpALDSPC"
+    - "TempNetPracticalSpeedUpPC"
   mode: "retrain"
 
   numRepetitions: 1

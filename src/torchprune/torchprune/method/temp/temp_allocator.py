@@ -30,7 +30,7 @@ class TempErrorAllocator(BaseDecomposeAllocator):
         # register the buffers for the required errors
         self.register_buffer("_rel_error", None)
 
-        self.weights = [self.get_coreset(mod.weight) for mod in self._net.compressible_layers]
+        self.weights = [self.get_coreset(mod.weight,scheme) for mod,scheme in zip(self._net.compressible_layers,self._schemes)]
         # compute relative error for each layer
         rel_errors = [
             self._compute_rel_error_for_weight(weight, k_s, scheme)
@@ -148,7 +148,7 @@ class TempErrorAllocator(BaseDecomposeAllocator):
         divisors = np.arange(w_shape_in, 0, -1)
         return divisors[np.remainder(w_shape_in, divisors) == 0]
 
-    def get_coreset(self, weight):
+    def get_coreset(self, weight,scheme):
         return weight
 
     def _get_k_splits(self, desired_k_split):
@@ -355,7 +355,7 @@ class TempErrorIterativeAllocator(TempErrorAllocator):
         k_best = -1
         s_best = -1
 
-        for k_option in self._possible_k_splits[ell]:
+        for k_option in tqdm(self._possible_k_splits[ell],desc=f"k values for layer {ell}"):
             for scheme in self._scheme_choices:
                 # check resulting relative error
                 rel_error = self._lookup_rel_error(ell, k_option, scheme)
@@ -699,7 +699,7 @@ class TempErrorIterativeAllocatorJOPT(TempErrorIterativeAllocator):
                 weight,
                 j=j,
                 k=k_split,
-                verbose=True
+                verbose=False
             )
             u_stitched, v_stitched = factor.stitch(partition, list_u, list_v)
 
@@ -776,37 +776,49 @@ class TempErrorIterativeAllocatorUseBest(TempErrorIterativeAllocator):
         return True
 
 class TempErrorUseCoresetPC(TempErrorIterativeAllocator):
-    def get_coreset(self, weight):
-        n = weight.shape[1]
+    def get_coreset(self, weight, scheme):
+        new_weight = scheme.fold(weight.detach())
+        kernel_size = 1
+        for size in scheme.get_kernel(weight):
+            kernel_size *= size
+        n = new_weight.shape[1] // kernel_size
         new_n = n
-        for i in range(self._factor_order):
-            for j in range(2,new_n):
-                if new_n % j == 0:
-                    new_n = new_n // j
-                    break
-
+        for i in range(1, n):
+            if n % i == 0 and (n // i) * kernel_size <= self._max_n:
+                new_n = n // i
+                break
+        if new_n == n:
+            return weight
+        n *= kernel_size
+        new_n *= kernel_size
         indxs = np.random.choice(np.arange(n), size=new_n, replace=False, p=np.ones(n) / n)
-        new_weight = weight[:, torch.tensor(indxs, dtype=torch.long)]
-        return new_weight
+        new_weight = new_weight[:, torch.tensor(indxs, dtype=torch.long)]
+        return scheme.unfold(new_weight, scheme.get_kernel(weight))
     @property
-    def _factor_order(self):
-        return 2
+    def _max_n(self):
+        return 1000
 class TempErrorUseCoresetJOPT(TempErrorIterativeAllocatorJOPT):
-    def get_coreset(self, weight):
-        n = weight.shape[1]
+    def get_coreset(self, weight,scheme):
+        new_weight = scheme.fold(weight.detach())
+        kernel_size = 1
+        for size in scheme.get_kernel(weight):
+            kernel_size *= size
+        n = new_weight.shape[1]//kernel_size
         new_n = n
-        for i in range(self._factor_order):
-            for j in range(2,new_n):
-                if new_n%j == 0:
-                    new_n = new_n//j
-                    break
-
+        for i in range(1, n):
+            if n % i == 0 and (n // i)*kernel_size <= self._max_n:
+                new_n = n // i
+                break
+        if new_n == n:
+            return weight
+        n *= kernel_size
+        new_n *= kernel_size
         indxs = np.random.choice(np.arange(n), size=new_n, replace=False, p=np.ones(n)/n)
-        new_weight = weight[:,torch.tensor(indxs,dtype=torch.long)]
-        return new_weight
+        new_weight = new_weight[:,torch.tensor(indxs,dtype=torch.long)]
+        return scheme.unfold(new_weight,scheme.get_kernel(weight))
     @property
-    def _factor_order(self):
-        return 2
+    def _max_n(self):
+        return 1000
 
 class TempErrorRandomPartitionsPC(TempErrorIterativeAllocator):
     def _compute_rel_error_for_weight(self, weight, k_split, scheme):
@@ -855,7 +867,7 @@ class TempErrorRandomPartitionsJOPT(TempErrorIterativeAllocatorJOPT):
             rel_error = np.minimum(rel_error,np.linalg.svd(new_weight,compute_uv=False))
         rel_error = torch.tensor(rel_error, device=device)
         return (rel_error/op_norm).to(device)
-class TempErrorPracticalSpeedUpPC(TempErrorIterativeAllocator):
+class TempErrorPracticalSpeedUpPC(TempErrorUseCoresetPC):
     def _compute_rel_error_for_weight(self, weight, k_split, scheme):
         # calculate k,j projective clustering for each of the possible j values and with the given k
         # fold into matrix operator
@@ -899,7 +911,7 @@ class TempErrorPracticalSpeedUpPC(TempErrorIterativeAllocator):
     def _max_j_calcs(self):
         return 16
 
-class TempErrorPracticalSpeedUpJOPT(TempErrorIterativeAllocator):
+class TempErrorPracticalSpeedUpJOPT(TempErrorUseCoresetJOPT):
     def _compute_rel_error_for_weight(self, weight, k_split, scheme):
         # calculate k,j projective clustering for each of the possible j values and with the given k
         # fold into matrix operator
@@ -943,7 +955,7 @@ class TempErrorPracticalSpeedUpJOPT(TempErrorIterativeAllocator):
     def _max_j_calcs(self):
         return 16
 
-class TempErrorPracticalSpeedUpALDSPC(TempErrorIterativeAllocator):
+class TempErrorPracticalSpeedUpALDSPC(TempErrorUseCoresetPC):
     def _compute_rel_error_for_weight(self, weight, k_split, scheme):
         # calculate k,j projective clustering for each of the possible j values and with the given k
         # fold into matrix operator
@@ -990,7 +1002,7 @@ class TempErrorPracticalSpeedUpALDSPC(TempErrorIterativeAllocator):
     def _max_j_calcs(self):
         return 16
 
-class TempErrorPracticalSpeedUpALDSJOPT(TempErrorIterativeAllocator):
+class TempErrorPracticalSpeedUpALDSJOPT(TempErrorUseCoresetJOPT):
     def _compute_rel_error_for_weight(self, weight, k_split, scheme):
         # calculate k,j projective clustering for each of the possible j values and with the given k
         # fold into matrix operator
