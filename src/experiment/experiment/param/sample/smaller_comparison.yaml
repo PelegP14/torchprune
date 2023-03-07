@@ -11,6 +11,7 @@ retraining:
 
 experiments:
   methods:
+    - "TempNetPracticalSpeedUpALDSPCnew"
     - "TempNetPracticalSpeedUpALDSPC"
     - "TempNetPracticalSpeedUpPC"
   mode: "retrain"

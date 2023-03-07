@@ -30,6 +30,8 @@ from .temp_allocator import (
     TempErrorPracticalSpeedUpJOPT,
     TempErrorPracticalSpeedUpALDSPC,
     TempErrorPracticalSpeedUpALDSJOPT,
+    TempErrorPracticalSpeedUpALDSPCnew,
+    TempErrorPracticalSpeedUpALDSJOPTnew,
     TempErrorRandomPartitionsPC,
     TempErrorRandomPartitionsJOPT
 )
@@ -229,6 +231,19 @@ class TempNetPracticalSpeedUpALDSJOPT(TempNetJOpt):
     @property
     def _allocator_type(self):
         return TempErrorPracticalSpeedUpALDSJOPT
+
+class TempNetPracticalSpeedUpALDSPCnew(TempNet):
+
+    @property
+    def _allocator_type(self):
+        return TempErrorPracticalSpeedUpALDSPCnew
+
+class TempNetPracticalSpeedUpALDSJOPTnew(TempNetJOpt):
+
+    @property
+    def _allocator_type(self):
+        return TempErrorPracticalSpeedUpALDSJOPTnew
+
 
 class TempNetRandomPartitionsPC(TempNet):
     @property

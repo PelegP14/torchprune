@@ -27,6 +27,8 @@ from .temp_net import (
     TempNetPracticalSpeedUpJOPT,
     TempNetPracticalSpeedUpALDSPC,
     TempNetPracticalSpeedUpALDSJOPT,
+    TempNetPracticalSpeedUpALDSPCnew,
+    TempNetPracticalSpeedUpALDSJOPTnew,
     TempNetRandomPartitionsPC,
     TempNetRandomPartitionsJOPT
 )

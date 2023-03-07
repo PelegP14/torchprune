@@ -101,6 +101,37 @@ class TempErrorAllocator(BaseDecomposeAllocator):
         rel_error = torch.tensor(rel_error,device=device)/(op_norm * np.sqrt(k_split))
         return rel_error
 
+    def _rel_error_alds(self, weight, k_split, scheme):
+        device = weight.device
+        op_norm = self._compute_norm_for_weight(weight, scheme, ord=self._norm_ord)
+
+        weight = scheme.fold(weight.detach()).t()
+        n = weight.shape[0]
+
+        # compute rank (notice the transpose when unfolding)
+        rank_k = min(weight.shape[1], weight.shape[0] // k_split)
+
+        partition = [i // int(n / k_split) for i in range(n)]
+        idx_list = [[row for row in range(n) if partition[row] == z] for z in range(k_split)]
+        A_list = [weight[idx, :] for idx in idx_list]
+        SVD_list = [torch.svd(M) for M in A_list]
+
+        rel_error = []
+        for j in tqdm(range(rank_k), desc=f"layer of size n={weight.shape[0]}, d={weight.shape[1]}, k={k_split}",
+                      leave=False):
+            list_u = [U[:, :j].matmul(torch.diag(D[:j])) for U, D, _ in SVD_list]
+            list_v = [V.t()[:j] for _, _, V in SVD_list]
+            u_stitched, v_stitched = factor.stitch(partition, list_u, list_v)
+
+            new_weight = u_stitched @ v_stitched
+
+            diff = new_weight - weight
+
+            rel_error.append(torch.linalg.norm(diff, ord=self._norm_ord).item())
+
+        rel_error = torch.tensor(rel_error, device=device) / (op_norm * np.sqrt(k_split))
+        return rel_error
+
     @staticmethod
     def _compute_sv_for_weight(weight, k_split, scheme):
         """Compute SVD for one layer."""
@@ -1041,6 +1072,98 @@ class TempErrorPracticalSpeedUpALDSJOPT(TempErrorUseCoresetJOPT):
 
 
         full_rel_error = singular_values.max(dim=0)[0]/op_norm
+        full_rel_error[j_options] = torch.tensor(rel_error, device=device)/ (op_norm * np.sqrt(k_split))
+
+        return full_rel_error
+
+    @property
+    def _max_j_calcs(self):
+        return 16
+
+class TempErrorPracticalSpeedUpALDSPCnew(TempErrorUseCoresetPC):
+    def _compute_rel_error_for_weight(self, weight, k_split, scheme):
+        # calculate k,j projective clustering for each of the possible j values and with the given k
+        # fold into matrix operator
+        device = weight.device
+        singular_values = self._compute_sv_for_weight(weight, k_split, scheme)
+        op_norm = self._compute_norm_for_weight(weight, scheme, ord=self._norm_ord)
+
+        weight = scheme.fold(weight.detach()).t()
+
+        # get k_split as int instead of tensor
+        k_split = k_split.item()
+
+        # compute rank (notice the transpose when unfolding)
+        rank_k = min(weight.shape[1], weight.shape[0] // k_split)
+
+        rel_error = []
+        j_options = np.linspace(1,rank_k-1,self._max_j_calcs).astype(int)
+        j_options = np.minimum(j_options,rank_k-1)
+        j_options = np.concatenate(([0],j_options))
+        j_options = np.unique(j_options)
+        for j in tqdm(j_options,desc=f"layer of size n={weight.shape[0]}, d={weight.shape[1]}, k={k_split}",leave=False):
+            partition, list_u, list_v = factor.raw_messi(
+                weight,
+                j=j,
+                k=k_split,
+                verbose=False
+            )
+            u_stitched, v_stitched = factor.stitch(partition, list_u, list_v)
+
+            new_weight = u_stitched @ v_stitched
+
+            diff = new_weight - weight
+
+            rel_error.append(torch.linalg.norm(diff, ord=self._norm_ord).item())
+
+        full_rel_error = self._rel_error_alds(weight.t(),k_split,scheme)
+        full_rel_error[j_options] = torch.tensor(rel_error, device=device) / (op_norm * np.sqrt(k_split))
+
+        return full_rel_error
+
+    @property
+    def _max_j_calcs(self):
+        return 16
+
+
+
+class TempErrorPracticalSpeedUpALDSJOPTnew(TempErrorUseCoresetJOPT):
+    def _compute_rel_error_for_weight(self, weight, k_split, scheme):
+        # calculate k,j projective clustering for each of the possible j values and with the given k
+        # fold into matrix operator
+        device = weight.device
+        singular_values = self._compute_sv_for_weight(weight, k_split, scheme)
+        op_norm = self._compute_norm_for_weight(weight, scheme, ord=self._norm_ord)
+
+        weight = scheme.fold(weight.detach()).t()
+
+        # get k_split as int instead of tensor
+        k_split = k_split.item()
+
+        # compute rank (notice the transpose when unfolding)
+        rank_k = min(weight.shape[1], weight.shape[0] // k_split)
+
+        rel_error = []
+        j_options = np.linspace(1,rank_k-1,self._max_j_calcs).astype(int)
+        j_options = np.minimum(j_options, rank_k - 1)
+        j_options = np.concatenate(([0],j_options))
+        j_options = np.unique(j_options)
+        for j in tqdm(j_options,desc=f"layer of size n={weight.shape[0]}, d={weight.shape[1]}, k={k_split}",leave=False):
+            partition, list_u, list_v = factor.raw_j_opt(
+                weight,
+                j=j,
+                k=k_split,
+                verbose=False
+            )
+            u_stitched, v_stitched = factor.stitch(partition, list_u, list_v)
+
+            new_weight = u_stitched @ v_stitched
+
+            diff = new_weight - weight
+
+            rel_error.append(torch.linalg.norm(diff, ord=self._norm_ord).item())
+
+        full_rel_error = self._rel_error_alds(weight.t(),k_split,scheme)
         full_rel_error[j_options] = torch.tensor(rel_error, device=device)/ (op_norm * np.sqrt(k_split))
 
         return full_rel_error
